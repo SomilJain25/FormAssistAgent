@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
-        // Each entry point becomes a separate JS bundle
       input: {
-        popup: resolve(__dirname, 'src/popup/index.html'),
+        popup: resolve(__dirname, 'popup.html'),        // ← root level
         background: resolve(__dirname, 'src/background/background.ts'),
       },
       output: {

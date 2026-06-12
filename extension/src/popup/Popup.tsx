@@ -1,73 +1,134 @@
 import React, { useState } from 'react'
+import useSpeechRecognition, { SupportedLanguage } from '../hooks/useSpeechRecognition'
 
-type Status = 'idle' | 'listening' | 'processing'
+const LANGUAGES: { label: string; value: SupportedLanguage }[] = [
+  { label: '🇮🇳 English (India)', value: 'en-IN' },
+  { label: '🇮🇳 Hindi',           value: 'hi-IN' },
+  { label: '🌐 English (US)',      value: 'en-US' },
+]
 
 const Popup: React.FC = () => {
-  const [status, setStatus] = useState<Status>('idle')
-  const [transcript, setTranscript] = useState<string>('')
+  const [language, setLanguage] = useState<SupportedLanguage>('en-IN')
 
-  const handleStartListening = () => {
-    setStatus('listening')
-    setTranscript('')
-    // Speech recognition will be wired up in Phase 2
-    console.log('Voice Form Assistant: Start listening triggered')
-  }
+  const {
+    isListening,
+    transcript,
+    interimTranscript,
+    error,
+    isSupported,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition()
 
-  const handleStopListening = () => {
-    setStatus('idle')
-    console.log('Voice Form Assistant: Stop listening triggered')
-  }
+  // Combined display text: confirmed + live interim
+  const displayText = transcript + (interimTranscript ? ' ' + interimTranscript : '')
 
-  const getStatusLabel = (): string => {
-    switch (status) {
-      case 'listening':
-        return 'Listening...'
-      case 'processing':
-        return 'Processing...'
-      default:
-        return 'Ready'
-    }
+  if (!isSupported) {
+    return (
+      <div className="popup-container">
+        <div className="unsupported">
+          ⚠️ Web Speech API not supported in this browser.
+          Please use Chrome.
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="popup-container">
+      {/* Header */}
       <div className="popup-header">
-        <div className="logo">VFA</div>
+        <div className={`logo ${isListening ? 'logo-pulse' : ''}`}>🎤</div>
         <div>
           <h1 className="popup-title">Voice Form Assistant</h1>
           <p className="popup-subtitle">Speak to fill any form</p>
         </div>
       </div>
 
-      <div className={`status-badge status-${status}`}>
-        {getStatusLabel()}
+      {/* Language selector */}
+      <div className="lang-row">
+        <label className="lang-label">Language:</label>
+        <select
+          className="lang-select"
+          value={language}
+          onChange={e => setLanguage(e.target.value as SupportedLanguage)}
+          disabled={isListening}
+        >
+          {LANGUAGES.map(l => (
+            <option key={l.value} value={l.value}>{l.label}</option>
+          ))}
+        </select>
       </div>
 
-      <div className="transcript-box">
-        {transcript
-          ? <p className="transcript-text">{transcript}</p>
-          : <p className="transcript-placeholder">Your spoken words will appear here...</p>
-        }
+      {/* Status badge */}
+      <div className={`status-badge ${isListening ? 'status-listening' : 'status-idle'}`}>
+        {isListening ? '🔴 Listening...' : '⚪ Ready'}
       </div>
 
+      {/* Transcript box */}
+      <div className={`transcript-box ${isListening ? 'transcript-active' : ''}`}>
+        {displayText ? (
+          <>
+            {/* Confirmed text */}
+            {transcript && (
+              <span className="transcript-final">{transcript}</span>
+            )}
+            {/* Live interim text */}
+            {interimTranscript && (
+              <span className="transcript-interim"> {interimTranscript}</span>
+            )}
+          </>
+        ) : (
+          <p className="transcript-placeholder">
+            {isListening
+              ? 'Start speaking...'
+              : 'Click "Start Listening" then speak naturally.'
+            }
+          </p>
+        )}
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="error-box">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* Buttons */}
       <div className="button-row">
         <button
           className="btn btn-primary"
-          onClick={handleStartListening}
-          disabled={status === 'listening'}
+          onClick={() => startListening(language)}
+          disabled={isListening}
         >
-          Start Listening
+          🎙️ Start Listening
         </button>
         <button
           className="btn btn-secondary"
-          onClick={handleStopListening}
-          disabled={status === 'idle'}
+          onClick={stopListening}
+          disabled={!isListening}
         >
-          Stop
+          ⏹️ Stop
         </button>
       </div>
 
-      <p className="popup-footer">Phase 1 - Extension Foundation</p>
+      {/* Clear button — only show when there's text */}
+      {transcript && (
+        <button className="btn btn-clear" onClick={resetTranscript}>
+          🗑️ Clear transcript
+        </button>
+      )}
+
+      {/* Send to backend preview — Phase 4 will wire this up */}
+      {transcript && !isListening && (
+        <div className="next-step-hint">
+          ✅ Transcript ready — NLP extraction in Phase 4
+        </div>
+      )}
+
+      <p className="popup-footer">Phase 2 — Speech Recognition</p>
     </div>
   )
 }

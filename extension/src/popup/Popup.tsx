@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 
-// Status type for type safety
 type Status = 'idle' | 'listening' | 'processing'
 
 const Popup: React.FC = () => {
@@ -21,29 +20,29 @@ const Popup: React.FC = () => {
 
   const getStatusLabel = (): string => {
     switch (status) {
-      case 'listening': return '🎙️ Listening...'
-      case 'processing': return '⚙️ Processing...'
-      default: return 'Ready'
+      case 'listening':
+        return 'Listening...'
+      case 'processing':
+        return 'Processing...'
+      default:
+        return 'Ready'
     }
   }
 
   return (
     <div className="popup-container">
-      {/* Header */}
       <div className="popup-header">
-        <div className="logo">🎤</div>
+        <div className="logo">VFA</div>
         <div>
           <h1 className="popup-title">Voice Form Assistant</h1>
           <p className="popup-subtitle">Speak to fill any form</p>
         </div>
       </div>
 
-      {/* Status badge */}
       <div className={`status-badge status-${status}`}>
         {getStatusLabel()}
       </div>
 
-      {/* Transcript area — will show live text in Phase 2 */}
       <div className="transcript-box">
         {transcript
           ? <p className="transcript-text">{transcript}</p>
@@ -51,26 +50,24 @@ const Popup: React.FC = () => {
         }
       </div>
 
-      {/* Action buttons */}
       <div className="button-row">
         <button
           className="btn btn-primary"
           onClick={handleStartListening}
           disabled={status === 'listening'}
         >
-          🎙️ Start Listening
+          Start Listening
         </button>
         <button
           className="btn btn-secondary"
           onClick={handleStopListening}
           disabled={status === 'idle'}
         >
-          ⏹️ Stop
+          Stop
         </button>
       </div>
 
-      {/* Footer */}
-      <p className="popup-footer">Phase 1 — Extension Foundation</p>
+      <p className="popup-footer">Phase 1 - Extension Foundation</p>
     </div>
   )
 }

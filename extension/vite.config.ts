@@ -7,9 +7,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
-      input: {
         // Each entry point becomes a separate JS bundle
-        popup: resolve(__dirname, 'src/popup/index.tsx'),
+      input: {
+        popup: resolve(__dirname, 'src/popup/index.html'),
         background: resolve(__dirname, 'src/background/background.ts'),
       },
       output: {

@@ -50,20 +50,45 @@ const Popup: React.FC = () => {
   }, [])
 
   const sendToContentScript = (type: string, extra = {}) => {
-    // Send message to the active tab's content script
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tabId = tabs[0]?.id
-      if (tabId == null) {
-        setError('No active tab found. Open a webpage first.')
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tab = tabs[0]
+      const tabId = tab?.id
+      const url = tab?.url || ''
+
+      // Block on chrome:// and other restricted pages
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        setError('Please open a regular webpage (http/https) first, then try again.')
         return
       }
-      chrome.tabs.sendMessage(tabId, { type, ...extra }, (response) => {
+
+      // Try sending message; if content script missing, inject it first
+      chrome.tabs.sendMessage(tabId!, { type, ...extra }, (response) => {
         if (chrome.runtime.lastError) {
-          setError('Could not connect to page. Please refresh the page and try again.')
-        }
-      })
+          // Content script not loaded — inject it now
+          chrome.scripting.executeScript(
+            {
+              target: { tabId: tabId! },
+              files: ['contentScript.js'],
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                setError('Could not inject script: ' + chrome.runtime.lastError.message)
+                return
+              }
+              // Small delay then retry
+              setTimeout(() => {
+                chrome.tabs.sendMessage(tabId!, { type, ...extra }, () => {
+                  if (chrome.runtime.lastError) {
+                    setError('Still could not connect. Please refresh the page.')
+                  }
+                })
+              }, 300)
+          }
+        )
+      }
     })
-  }
+  })
+}
 
   const handleStart = () => {
     setError(null)

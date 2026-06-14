@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import FieldPanel from '../components/FieldPanel'
 import useFormScanner from '../hooks/useFormScanner'
+import { extractEntities, Entity } from '../services/api'
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
 type Status = 'idle' | 'listening' | 'error'
@@ -19,9 +20,10 @@ const Popup: React.FC = () => {
   const [transcript, setTranscript]       = useState('')
   const [interimText, setInterimText]     = useState('')
   const [error, setError]                 = useState<string | null>(null)
-
+  const [entities, setEntities]           = useState<Entity[]>([])
+  const [isExtracting, setIsExtracting]   = useState(false)
   const { fields, isScanning, lastScanned, scanFields, clearFields } = useFormScanner()
-
+  
   useEffect(() => {
     const handler = (message: any) => {
       switch (message.type) {
@@ -76,8 +78,11 @@ const Popup: React.FC = () => {
   const handleStop  = () => sendToContentScript('STOP_LISTENING')
 
   const handleClear = () => {
-    setTranscript(''); setInterimText('')
-    setError(null); setStatus('idle')
+    setTranscript('')
+    setInterimText('')
+    setEntities([])
+    setError(null)
+    setStatus('idle')
   }
 
   const displayText = transcript + (interimText ? ' ' + interimText : '')
@@ -146,6 +151,43 @@ const Popup: React.FC = () => {
               </p>
             )}
           </div>
+          
+          {transcript && status === 'idle' && (
+            <button
+              className="btn btn-extract"
+              disabled={isExtracting}
+              onClick={async () => {
+                setIsExtracting(true)
+
+                try {
+                  const result = await extractEntities(transcript)
+                  setEntities(result.entities)
+                } catch (e) {
+                  setError('Could not reach backend. Is it running on port 8000?')
+                } finally {
+                  setIsExtracting(false)
+                }
+              }}
+            >
+              {isExtracting ? '⏳ Extracting...' : '🧠 Extract Entities'}
+            </button>
+          )}
+
+          {entities.length > 0 && (
+            <div className="entity-list">
+              <h4>Detected Entities</h4>
+
+              {entities.map((e, index) => (
+                <div key={`${e.entity_type}-${index}`} className="entity-row">
+                  <span className="entity-type">{e.entity_type}</span>
+                  <span className="entity-value">{e.normalized}</span>
+                  <span className="entity-conf">
+                    {Math.round(e.confidence * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {error && <div className="error-box">⚠️ {error}</div>}
 

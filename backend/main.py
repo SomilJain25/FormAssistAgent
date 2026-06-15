@@ -1,8 +1,7 @@
-# main.py — FastAPI application entry point
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.extract import router as extract_router
+from routers.map import router as map_router          # ← add this
 
 app = FastAPI(
     title="Voice Form Assistant API",
@@ -10,25 +9,20 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow Chrome extension to call this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # tighten in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routers
 app.include_router(extract_router, prefix="/api/v1", tags=["NLP"])
+app.include_router(map_router,     prefix="/api/v1", tags=["Mapping"])  # ← add this
 
 @app.get("/")
 async def root():
-    return {
-        "status": "running",
-        "version": "1.0.0",
-        "docs": "/docs",
-    }
+    return {"status": "running", "version": "1.0.0", "docs": "/docs"}
 
 @app.get("/health")
 async def health():

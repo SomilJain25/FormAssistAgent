@@ -1,5 +1,3 @@
-// api.ts — calls the FastAPI backend from the extension
-
 const API_BASE = 'http://localhost:8000/api/v1'
 
 export interface Entity {
@@ -10,6 +8,16 @@ export interface Entity {
   raw_text: string
 }
 
+export interface MappingResult {
+  entity_type: string
+  entity_value: string
+  field_id: string
+  field_label: string
+  field_type: string
+  confidence: float
+  matched: boolean
+}
+
 export interface ExtractResponse {
   success: boolean
   transcript: string
@@ -18,16 +26,33 @@ export interface ExtractResponse {
   message: string
 }
 
+export interface MapResponse {
+  success: boolean
+  mappings: MappingResult[]
+  matched_count: number
+  unmatched_count: number
+  message: string
+}
+
 export async function extractEntities(text: string): Promise<ExtractResponse> {
-  const response = await fetch(`${API_BASE}/extract`, {
+  const res = await fetch(`${API_BASE}/extract`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, language: 'en' }),
   })
+  if (!res.ok) throw new Error(`Extract API error: ${res.status}`)
+  return res.json()
+}
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`)
-  }
-
-  return response.json()
+export async function mapEntitiesToFields(
+  entities: Entity[],
+  fields: object[],
+): Promise<MapResponse> {
+  const res = await fetch(`${API_BASE}/map`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entities, fields }),
+  })
+  if (!res.ok) throw new Error(`Map API error: ${res.status}`)
+  return res.json()
 }

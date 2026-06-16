@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import FieldPanel from '../components/FieldPanel'
 import useFormScanner from '../hooks/useFormScanner'
-import { extractEntities, Entity } from '../services/api'
+import {
+  extractEntities,
+  mapEntitiesToFields,
+  Entity,
+  MappingResult
+} from '../services/api'
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
 type Status = 'idle' | 'listening' | 'error'
@@ -23,7 +28,9 @@ const Popup: React.FC = () => {
   const [entities, setEntities]           = useState<Entity[]>([])
   const [isExtracting, setIsExtracting]   = useState(false)
   const { fields, isScanning, lastScanned, scanFields, clearFields } = useFormScanner()
-  
+  const [mappings, setMappings]           = useState<MappingResult[]>([])
+  const [isMapping, setIsMapping]         = useState(false)
+
   useEffect(() => {
     const handler = (message: any) => {
       switch (message.type) {
@@ -81,9 +88,43 @@ const Popup: React.FC = () => {
     setTranscript('')
     setInterimText('')
     setEntities([])
+    setMappings([])   // add this
     setError(null)
     setStatus('idle')
   }
+
+  const handleExtract = async () => {
+  setIsExtracting(true)
+  setMappings([])
+
+  try {
+    const result = await extractEntities(transcript)
+    setEntities(result.entities)
+  } catch {
+    setError('Could not reach backend. Is it running on port 8000?')
+  } finally {
+    setIsExtracting(false)
+  }
+}
+
+  const handleMap = async () => {
+  if (!entities.length || !fields.length) return
+
+  setIsMapping(true)
+
+  try {
+    const result = await mapEntitiesToFields(
+      entities,
+      fields
+    )
+
+    setMappings(result.mappings)
+  } catch {
+    setError('Mapping failed. Make sure backend is running.')
+  } finally {
+    setIsMapping(false)
+  }
+}
 
   const displayText = transcript + (interimText ? ' ' + interimText : '')
 
@@ -155,19 +196,8 @@ const Popup: React.FC = () => {
           {transcript && status === 'idle' && (
             <button
               className="btn btn-extract"
+              onClick={handleExtract}
               disabled={isExtracting}
-              onClick={async () => {
-                setIsExtracting(true)
-
-                try {
-                  const result = await extractEntities(transcript)
-                  setEntities(result.entities)
-                } catch (e) {
-                  setError('Could not reach backend. Is it running on port 8000?')
-                } finally {
-                  setIsExtracting(false)
-                }
-              }}
             >
               {isExtracting ? '⏳ Extracting...' : '🧠 Extract Entities'}
             </button>
@@ -183,6 +213,66 @@ const Popup: React.FC = () => {
                   <span className="entity-value">{e.normalized}</span>
                   <span className="entity-conf">
                     {Math.round(e.confidence * 100)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {entities.length > 0 && fields.length > 0 && (
+            <button
+              className="btn btn-map"
+              onClick={handleMap}
+              disabled={isMapping}
+            >
+              {isMapping
+                ? '⏳ Mapping...'
+                : `🔗 Map to ${fields.length} Fields`}
+            </button>
+          )}
+
+          {entities.length > 0 && fields.length === 0 && (
+            <div className="hint-box">
+              💡 Go to Fields tab → Scan Page first,
+              then come back to map.
+            </div>
+          )}
+
+          {mappings.length > 0 && (
+            <div className="mapping-list">
+              <p className="section-label">
+                Field mappings
+              </p>
+
+              {mappings.map((m) => (
+                <div
+                  key={m.entity_type}
+                  className={`mapping-row ${
+                    m.matched
+                      ? 'mapping-matched'
+                      : 'mapping-unmatched'
+                  }`}
+                >
+                  <div className="mapping-left">
+                    <span className="entity-type">
+                      {m.entity_type}
+                    </span>
+
+                    <span className="mapping-arrow">
+                      →
+                    </span>
+
+                    <span className="mapping-field">
+                      {m.field_label || '(no match)'}
+                    </span>
+                  </div>
+
+                  <span className="mapping-conf">
+                    {m.matched
+                      ? `${Math.round(
+                          m.confidence * 100
+                        )}%`
+                      : '✗'}
                   </span>
                 </div>
               ))}

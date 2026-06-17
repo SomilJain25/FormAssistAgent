@@ -1,86 +1,91 @@
 // contentScript.ts
-// Handles: Speech Recognition (Phase 2) + Form Detection (Phase 3)
+// Phase 2: Speech Recognition
+// Phase 3: Form Detection
+// Phase 6: Auto Form Filling
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DetectedField {
   index: number
-  fieldId: string       // unique key we assign
-  label: string         // best human-readable label we could find
+  fieldId: string
+  label: string
   placeholder: string
   name: string
   id: string
-  type: string          // text, email, tel, select, textarea ...
-  tagName: string       // INPUT, TEXTAREA, SELECT
-  value: string         // current value if any
+  type: string
+  tagName: string
+  value: string
 }
 
-// ─── Form Scanner ─────────────────────────────────────────────────────────────
+export interface FillInstruction {
+  fieldId: string   // matches DetectedField.fieldId
+  value: string     // value to fill
+}
 
-/**
- * Walk the DOM and find the best label text for an element.
- * Priority: <label for="id"> → aria-label → title → closest <label> wrapper
- */
+export interface FillResult {
+  fieldId: string
+  success: boolean
+  message: string
+}
+
+// ─── Form Scanner (Phase 3) ───────────────────────────────────────────────────
+
 function getLabelForElement(el: HTMLElement): string {
-  // 1. <label for="elementId">
   if (el.id) {
     const label = document.querySelector<HTMLLabelElement>(`label[for="${el.id}"]`)
     if (label) return label.innerText.trim()
   }
-
-  // 2. aria-label attribute
   const ariaLabel = el.getAttribute('aria-label')
   if (ariaLabel) return ariaLabel.trim()
 
-  // 3. aria-labelledby → find that element's text
   const labelledBy = el.getAttribute('aria-labelledby')
   if (labelledBy) {
     const labelEl = document.getElementById(labelledBy)
     if (labelEl) return labelEl.innerText.trim()
   }
-
-  // 4. title attribute
   const title = el.getAttribute('title')
   if (title) return title.trim()
 
-  // 5. Closest wrapping <label>
   const closestLabel = el.closest('label')
   if (closestLabel) {
-    // Remove the input's own text from label text
     const clone = closestLabel.cloneNode(true) as HTMLElement
     clone.querySelectorAll('input, select, textarea').forEach(n => n.remove())
     const text = clone.innerText.trim()
     if (text) return text
   }
-
-  // 6. Previous sibling text (common in simple forms)
   const prev = el.previousElementSibling
-  if (prev && ['LABEL', 'SPAN', 'P', 'DIV', 'TD', 'TH'].includes(prev.tagName)) {
+  if (prev && ['LABEL','SPAN','P','DIV','TD','TH'].includes(prev.tagName)) {
     const text = (prev as HTMLElement).innerText.trim()
-    if (text.length < 60) return text   // sanity limit
+    if (text.length < 60) return text
   }
-
   return ''
 }
 
-/**
- * Scan the page for all visible, interactable form fields.
- * Returns a clean array of DetectedField objects.
- */
 function scanFormFields(): DetectedField[] {
-  const selector = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), textarea, select'
-  const elements = Array.from(document.querySelectorAll<HTMLElement>(selector))
+  const selector = [
+    'input:not([type="hidden"])',
+    'input:not([type="submit"])',
+    'input:not([type="button"])',
+    'input:not([type="reset"])',
+    'input:not([type="image"])',
+    'textarea',
+    'select',
+  ].join(', ')
+
+  const elements = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), textarea, select'
+    )
+  )
 
   const fields: DetectedField[] = []
 
   elements.forEach((el, index) => {
-    // Skip invisible elements
     const style = window.getComputedStyle(el)
     if (style.display === 'none' || style.visibility === 'hidden') return
     if ((el as HTMLInputElement).disabled) return
 
-    const input = el as HTMLInputElement
-
+    const input       = el as HTMLInputElement
     const label       = getLabelForElement(el)
     const placeholder = input.placeholder || ''
     const name        = input.name        || ''
@@ -89,29 +94,256 @@ function scanFormFields(): DetectedField[] {
     const tagName     = el.tagName
     const value       = input.value       || ''
 
-    // Skip if we have zero identifying information
     if (!label && !placeholder && !name && !id) return
 
-    // Assign a stable unique key
     const fieldId = id || name || `field_${index}`
-
-    fields.push({
-      index,
-      fieldId,
-      label,
-      placeholder,
-      name,
-      id,
-      type,
-      tagName,
-      value,
-    })
+    fields.push({ index, fieldId, label, placeholder, name, id, type, tagName, value })
   })
 
   return fields
 }
 
-// ─── Speech Recognition (Phase 2 — unchanged) ────────────────────────────────
+// ─── Autofill Engine (Phase 6) ────────────────────────────────────────────────
+
+/**
+ * Fire all events a real user interaction would fire.
+ * This makes React, Angular, Vue detect the value change.
+ */
+function triggerInputEvents(el: HTMLElement): void {
+  const events = ['input', 'change', 'blur', 'keyup']
+  events.forEach(eventName => {
+    el.dispatchEvent(new Event(eventName, { bubbles: true }))
+  })
+
+  // React-specific: override the value setter to trigger synthetic events
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype, 'value'
+  )?.set
+
+  const nativeTextareaSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype, 'value'
+  )?.set
+
+  if (el.tagName === 'INPUT' && nativeInputValueSetter) {
+    nativeInputValueSetter.call(el, (el as HTMLInputElement).value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  if (el.tagName === 'TEXTAREA' && nativeTextareaSetter) {
+    nativeTextareaSetter.call(el, (el as HTMLTextAreaElement).value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+}
+
+/**
+ * Find a form element by fieldId.
+ * Tries: id → name → nth-field fallback
+ */
+function findElement(fieldId: string): HTMLElement | null {
+  // Try by id first
+  let el = document.getElementById(fieldId)
+  if (el) return el
+
+  // Try by name
+  el = document.querySelector(`[name="${fieldId}"]`)
+  if (el) return el
+
+  // Try data-field-id
+  el = document.querySelector(`[data-field-id="${fieldId}"]`)
+  if (el) return el
+
+  return null
+}
+
+/**
+ * Fill a single text input or textarea.
+ */
+function fillTextInput(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  el.focus()
+  el.value = value
+  triggerInputEvents(el)
+}
+
+/**
+ * Fill a <select> dropdown.
+ * Tries exact match → case-insensitive → partial match.
+ */
+function fillSelect(el: HTMLSelectElement, value: string): boolean {
+  const options = Array.from(el.options)
+  const valueLower = value.toLowerCase()
+
+  // Exact match
+  let match = options.find(o => o.value === value || o.text === value)
+
+  // Case-insensitive
+  if (!match) {
+    match = options.find(
+      o => o.value.toLowerCase() === valueLower ||
+           o.text.toLowerCase()  === valueLower
+    )
+  }
+
+  // Partial match
+  if (!match) {
+    match = options.find(
+      o => o.value.toLowerCase().includes(valueLower) ||
+           o.text.toLowerCase().includes(valueLower)
+    )
+  }
+
+  if (match) {
+    el.value = match.value
+    triggerInputEvents(el)
+    return true
+  }
+  return false
+}
+
+/**
+ * Fill radio buttons — find the radio with matching value/label.
+ */
+function fillRadio(name: string, value: string): boolean {
+  const radios = Array.from(
+    document.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${name}"]`)
+  )
+  const valueLower = value.toLowerCase()
+
+  const match = radios.find(
+    r => r.value.toLowerCase() === valueLower ||
+         getLabelForElement(r).toLowerCase().includes(valueLower)
+  )
+
+  if (match) {
+    match.checked = true
+    triggerInputEvents(match)
+    return true
+  }
+  return false
+}
+
+/**
+ * Fill checkboxes — check if value is truthy.
+ */
+function fillCheckbox(el: HTMLInputElement, value: string): void {
+  const truthy = ['true', 'yes', '1', 'checked', 'on']
+  el.checked = truthy.includes(value.toLowerCase())
+  triggerInputEvents(el)
+}
+
+/**
+ * Master fill function — routes to correct filler based on field type.
+ */
+function fillField(instruction: FillInstruction): FillResult {
+  const { fieldId, value } = instruction
+
+  const el = findElement(fieldId)
+
+  if (!el) {
+    return {
+      fieldId,
+      success: false,
+      message: `Element not found: ${fieldId}`,
+    }
+  }
+
+  const tagName = el.tagName
+  const type    = (el as HTMLInputElement).type?.toLowerCase() || ''
+
+  try {
+    // SELECT dropdown
+    if (tagName === 'SELECT') {
+      const filled = fillSelect(el as HTMLSelectElement, value)
+      return {
+        fieldId,
+        success: filled,
+        message: filled ? 'Filled select' : `No matching option for: ${value}`,
+      }
+    }
+
+    // TEXTAREA
+    if (tagName === 'TEXTAREA') {
+      fillTextInput(el as HTMLTextAreaElement, value)
+      return { fieldId, success: true, message: 'Filled textarea' }
+    }
+
+    // Radio buttons
+    if (type === 'radio') {
+      const name = (el as HTMLInputElement).name
+      const filled = fillRadio(name, value)
+      return {
+        fieldId,
+        success: filled,
+        message: filled ? 'Filled radio' : `No matching radio for: ${value}`,
+      }
+    }
+
+    // Checkboxes
+    if (type === 'checkbox') {
+      fillCheckbox(el as HTMLInputElement, value)
+      return { fieldId, success: true, message: 'Filled checkbox' }
+    }
+
+    // All other inputs (text, email, tel, number, date, password...)
+    fillTextInput(el as HTMLInputElement, value)
+
+    // For date inputs, also try setting via valueAsDate
+    if (type === 'date') {
+      const parts = value.split(/[-/]/)
+      if (parts.length === 3) {
+        // Try DD-MM-YYYY → YYYY-MM-DD (HTML date format)
+        let formatted = value
+        if (parts[0].length <= 2) {
+          formatted = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+        }
+        ;(el as HTMLInputElement).value = formatted
+        triggerInputEvents(el)
+      }
+    }
+
+    return { fieldId, success: true, message: `Filled ${type || 'text'} input` }
+
+  } catch (err) {
+    return {
+      fieldId,
+      success: false,
+      message: `Fill error: ${String(err)}`,
+    }
+  }
+}
+
+/**
+ * Fill multiple fields at once.
+ * Shows a brief highlight on each filled field.
+ */
+function fillAllFields(instructions: FillInstruction[]): FillResult[] {
+  const results: FillResult[] = []
+
+  instructions.forEach((instruction, i) => {
+    // Stagger fills slightly so page doesn't get overwhelmed
+    setTimeout(() => {
+      const result = fillField(instruction)
+      results.push(result)
+
+      // Visual highlight on filled field
+      if (result.success) {
+        const el = findElement(instruction.fieldId)
+        if (el) {
+          const original = el.style.cssText
+          el.style.outline     = '2px solid #4caf50'
+          el.style.background  = '#f1f8e9'
+          el.style.transition  = 'all 0.3s'
+          setTimeout(() => {
+            el.style.cssText = original
+          }, 2000)
+        }
+      }
+    }, i * 80)  // 80ms stagger between fills
+  })
+
+  return results
+}
+
+// ─── Speech Recognition (Phase 2) ────────────────────────────────────────────
 
 let recognition: any = null
 let isListening = false
@@ -121,10 +353,7 @@ const SpeechRecognition =
 
 function startRecognition(lang: string) {
   if (!SpeechRecognition) {
-    chrome.runtime.sendMessage({
-      type: 'SPEECH_ERROR',
-      error: 'Speech recognition not supported in this browser.',
-    })
+    chrome.runtime.sendMessage({ type: 'SPEECH_ERROR', error: 'Not supported.' })
     return
   }
   if (isListening) return
@@ -144,10 +373,9 @@ function startRecognition(lang: string) {
     let finalText = ''
     let interimText = ''
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i]
-      const text = result[0].transcript
-      if (result.isFinal) finalText += text + ' '
-      else interimText += text
+      const r = event.results[i]
+      if (r.isFinal) finalText += r[0].transcript + ' '
+      else interimText += r[0].transcript
     }
     chrome.runtime.sendMessage({
       type: 'SPEECH_RESULT',
@@ -157,17 +385,16 @@ function startRecognition(lang: string) {
   }
 
   recognition.onerror = (event: any) => {
-    let message = ''
-    switch (event.error) {
-      case 'not-allowed':
-        message = 'Microphone permission denied. Click 🔒 in address bar → allow microphone.'
-        break
-      case 'no-speech':   message = 'No speech detected. Please try again.'; break
-      case 'network':     message = 'Network error. Check your connection.'; break
-      case 'audio-capture': message = 'No microphone found.'; break
-      default: message = `Speech error: ${event.error}`
+    const msgs: Record<string, string> = {
+      'not-allowed':    'Microphone denied. Click 🔒 → allow microphone.',
+      'no-speech':      'No speech detected. Try again.',
+      'network':        'Network error.',
+      'audio-capture':  'No microphone found.',
     }
-    chrome.runtime.sendMessage({ type: 'SPEECH_ERROR', error: message })
+    chrome.runtime.sendMessage({
+      type: 'SPEECH_ERROR',
+      error: msgs[event.error] || `Error: ${event.error}`,
+    })
     isListening = false
   }
 
@@ -176,13 +403,9 @@ function startRecognition(lang: string) {
     chrome.runtime.sendMessage({ type: 'SPEECH_STOPPED' })
   }
 
-  try {
-    recognition.start()
-  } catch (err) {
-    chrome.runtime.sendMessage({
-      type: 'SPEECH_ERROR',
-      error: 'Could not start microphone. Reload the page and try again.',
-    })
+  try { recognition.start() }
+  catch {
+    chrome.runtime.sendMessage({ type: 'SPEECH_ERROR', error: 'Could not start mic.' })
   }
 }
 
@@ -203,15 +426,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break
 
     case 'SCAN_FIELDS':
-      // Scan the page and send results back immediately via sendResponse
       const fields = scanFormFields()
       sendResponse({ fields })
-      // Also broadcast so popup can listen via onMessage
       chrome.runtime.sendMessage({ type: 'FIELDS_DETECTED', fields })
       break
-  }
 
-  return true // keep message channel open for async sendResponse
+    case 'FILL_FIELDS':
+      // message.instructions = FillInstruction[]
+      const results = fillAllFields(message.instructions || [])
+      sendResponse({ results })
+      chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', results })
+      break
+  }
+  return true
 })
 
 chrome.runtime.sendMessage({ type: 'CONTENT_SCRIPT_READY' })

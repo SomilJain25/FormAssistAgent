@@ -55,6 +55,7 @@ async def extract(request: ExtractRequest):
             transcript=request.text,
             entities=entities,
             entity_map=entity_map,
+            detected_language=detected_lang,
             message=f"Extracted {len(entities)} entities ({detected_lang}).",
         )
 

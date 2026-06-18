@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import FieldPanel from '../components/FieldPanel'
-import ReviewPanel from '../components/ReviewPanel'
+import FieldPanel   from '../components/FieldPanel'
+import ReviewPanel  from '../components/ReviewPanel'
+import ProfileTab   from '../components/ProfileTab'
 import useFormScanner from '../hooks/useFormScanner'
-import useReview from '../hooks/useReview'
+import useReview    from '../hooks/useReview'
+import useProfile   from '../hooks/useProfile'
 import { extractEntities, mapEntitiesToFields, Entity, MappingResult } from '../services/api'
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
 type Status  = 'idle' | 'listening' | 'error'
-type TabName = 'speech' | 'fields' | 'review'
+type TabName = 'speech' | 'fields' | 'review' | 'profile'
 
 const LANGUAGES = [
   { label: '🇮🇳 English (India)', value: 'en-IN' as SupportedLanguage },
@@ -25,21 +27,21 @@ const Popup: React.FC = () => {
   const [entities, setEntities]         = useState<Entity[]>([])
   const [isExtracting, setIsExtracting] = useState(false)
   const [isMapping, setIsMapping]       = useState(false)
-  const [pipelineStep, setPipelineStep] = useState<string>('')
+  const [pipelineStep, setPipelineStep] = useState('')
 
   const { fields, isScanning, lastScanned, scanFields, clearFields } = useFormScanner()
+
   const {
-    items: reviewItems,
-    isFilling,
-    fillResult,
-    loadMappings,
-    updateItem,
-    approveAll,
-    fillApproved,
-    clearReview,
+    items: reviewItems, isFilling, fillResult,
+    loadMappings, updateItem, approveAll, fillApproved, clearReview,
   } = useReview()
 
-  // ── Message listener ──
+  const {
+    profile, isLoading: profileLoading, isSaving: profileSaving,
+    updateField, deleteField, clearAll, saveEntities, getFieldValue,
+  } = useProfile()
+
+  // ── Message listener ──────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (message: any) => {
       switch (message.type) {
@@ -57,18 +59,16 @@ const Popup: React.FC = () => {
     return () => chrome.runtime.onMessage.removeListener(handler)
   }, [])
 
-  // ── Send to content script ──
+  // ── Send to content script ────────────────────────────────────────────────
   const sendToPage = (type: string, extra = {}, callback?: (r: any) => void) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0]
       const tabId = tab?.id
       const url = tab?.url || ''
-
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         setError('Please open a real webpage first.')
         return
       }
-
       const send = () => {
         chrome.tabs.sendMessage(tabId!, { type, ...extra }, (res) => {
           if (chrome.runtime.lastError) {
@@ -78,50 +78,43 @@ const Popup: React.FC = () => {
           callback?.(res)
         })
       }
-
-      // Check if content script is alive
-      chrome.tabs.sendMessage(tabId!, { type: 'PING' }, (res) => {
+      chrome.tabs.sendMessage(tabId!, { type: 'PING' }, () => {
         if (chrome.runtime.lastError) {
           chrome.scripting.executeScript(
             { target: { tabId: tabId! }, files: ['contentScript.js'] },
             () => setTimeout(send, 300)
           )
-        } else {
-          send()
-        }
+        } else { send() }
       })
     })
   }
 
-  // ── Full pipeline: extract → map → load review ──
-  const handlePipeline = async () => {
-    if (!transcript) return
-    setError(null)
-    clearReview()
+  // ── Full pipeline ─────────────────────────────────────────────────────────
+  const handlePipeline = async (sourceText?: string) => {
+    const text = sourceText || transcript
+    if (!text) return
+    setError(null); clearReview()
 
-    // Step 1: extract entities
+    // Extract
     setPipelineStep('Extracting entities...')
     setIsExtracting(true)
     let extractedEntities: Entity[] = []
     try {
-      const res = await extractEntities(transcript)
+      const res = await extractEntities(text)
       extractedEntities = res.entities
       setEntities(extractedEntities)
     } catch {
       setError('Backend unreachable. Run: uvicorn main:app --reload --port 8000')
-      setIsExtracting(false)
-      setPipelineStep('')
-      return
+      setIsExtracting(false); setPipelineStep(''); return
     }
     setIsExtracting(false)
 
     if (!extractedEntities.length) {
-      setError('No entities found. Try speaking more clearly.')
-      setPipelineStep('')
-      return
+      setError('No entities found in transcript.')
+      setPipelineStep(''); return
     }
 
-    // Step 2: scan fields if needed
+    // Scan fields if needed
     setPipelineStep('Scanning form fields...')
     let currentFields = fields
     if (!currentFields.length) {
@@ -138,11 +131,10 @@ const Popup: React.FC = () => {
 
     if (!currentFields.length) {
       setError('No form fields found on this page.')
-      setPipelineStep('')
-      return
+      setPipelineStep(''); return
     }
 
-    // Step 3: map
+    // Map
     setPipelineStep('Mapping to fields...')
     setIsMapping(true)
     let mappedResults: MappingResult[] = []
@@ -151,19 +143,76 @@ const Popup: React.FC = () => {
       mappedResults = res.mappings
     } catch {
       setError('Mapping failed. Check backend.')
-      setIsMapping(false)
-      setPipelineStep('')
-      return
+      setIsMapping(false); setPipelineStep(''); return
     }
-    setIsMapping(false)
-    setPipelineStep('')
+    setIsMapping(false); setPipelineStep('')
 
-    // Step 4: load into review panel
     loadMappings(mappedResults)
-    setActiveTab('review')   // auto-switch to review tab
+    setActiveTab('review')
   }
 
-  // ── Speech handlers ──
+  // ── Fill from profile ─────────────────────────────────────────────────────
+  // Build a fake transcript from saved profile data, run through pipeline
+  const handleFillFromProfile = async () => {
+    const profileFields = profile?.fields
+    if (!profileFields || Object.keys(profileFields).length === 0) return
+
+    setError(null); clearReview()
+
+    // Scan fields first
+    setPipelineStep('Scanning form fields...')
+    let currentFields = fields
+    if (!currentFields.length) {
+      currentFields = await new Promise<any[]>(resolve => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const tabId = tabs[0]?.id
+          if (!tabId) { resolve([]); return }
+          chrome.tabs.sendMessage(tabId, { type: 'SCAN_FIELDS' }, (res) => {
+            resolve(res?.fields || [])
+          })
+        })
+      })
+    }
+
+    if (!currentFields.length) {
+      setError('No form fields found on this page.')
+      setPipelineStep(''); return
+    }
+
+    // Build entity list directly from profile
+    const profileEntities: Entity[] = Object.values(profileFields).map(f => ({
+      entity_type: f.key,
+      value:       f.value,
+      normalized:  f.value,
+      confidence:  1.0,
+      raw_text:    f.value,
+    }))
+
+    // Map directly
+    setPipelineStep('Mapping profile to fields...')
+    setIsMapping(true)
+    let mappedResults: MappingResult[] = []
+    try {
+      const res = await mapEntitiesToFields(profileEntities, currentFields)
+      mappedResults = res.mappings
+    } catch {
+      setError('Mapping failed. Check backend.')
+      setIsMapping(false); setPipelineStep(''); return
+    }
+    setIsMapping(false); setPipelineStep('')
+
+    loadMappings(mappedResults)
+    setActiveTab('review')
+  }
+
+  // ── Auto-save to profile after fill ──────────────────────────────────────
+  useEffect(() => {
+    if (fillResult && fillResult.success > 0 && entities.length > 0) {
+      saveEntities(entities)
+    }
+  }, [fillResult])
+
+  // ── Speech handlers ───────────────────────────────────────────────────────
   const handleStart = () => {
     setError(null)
     sendToPage('START_LISTENING', { lang: language })
@@ -179,7 +228,8 @@ const Popup: React.FC = () => {
 
   const displayText = transcript + (interimText ? ' ' + interimText : '')
   const isProcessing = isExtracting || isMapping
-  const reviewCount = reviewItems.length
+  const reviewCount  = reviewItems.length
+  const profileCount = profile ? Object.keys(profile.fields).length : 0
 
   return (
     <div className="popup-container">
@@ -195,21 +245,24 @@ const Popup: React.FC = () => {
       {/* Tabs */}
       <div className="tab-bar">
         <button
-          className={`tab-btn ${activeTab === 'speech' ? 'tab-active' : ''}`}
+          className={`tab-btn ${activeTab === 'speech'  ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('speech')}
-        >🎙️ Speech</button>
+        >🎙️</button>
         <button
-          className={`tab-btn ${activeTab === 'fields' ? 'tab-active' : ''}`}
+          className={`tab-btn ${activeTab === 'fields'  ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('fields')}
-        >📋 Fields {fields.length > 0 && `(${fields.length})`}</button>
+        >📋 {fields.length > 0 && `(${fields.length})`}</button>
         <button
-          className={`tab-btn ${activeTab === 'review' ? 'tab-active' : ''}`}
+          className={`tab-btn ${activeTab === 'review'  ? 'tab-active' : ''}`}
           onClick={() => setActiveTab('review')}
         >
-          📝 Review
-          {reviewCount > 0 && (
-            <span className="tab-badge">{reviewCount}</span>
-          )}
+          📝 {reviewCount > 0 && <span className="tab-badge">{reviewCount}</span>}
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'profile' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('profile')}
+        >
+          👤 {profileCount > 0 && <span className="tab-badge tab-badge-green">{profileCount}</span>}
         </button>
       </div>
 
@@ -253,46 +306,50 @@ const Popup: React.FC = () => {
           </div>
 
           {error && <div className="error-box">⚠️ {error}</div>}
+          {pipelineStep && <div className="pipeline-step">⏳ {pipelineStep}</div>}
 
-          {/* Pipeline progress */}
-          {pipelineStep && (
-            <div className="pipeline-step">⏳ {pipelineStep}</div>
-          )}
-
-          {/* Listen controls */}
           <div className="button-row">
-            <button
-              className="btn btn-primary"
-              onClick={handleStart}
-              disabled={status === 'listening'}
-            >🎙️ Start</button>
-            <button
-              className="btn btn-secondary"
-              onClick={handleStop}
-              disabled={status !== 'listening'}
-            >⏹️ Stop</button>
+            <button className="btn btn-primary" onClick={handleStart} disabled={status === 'listening'}>
+              🎙️ Start
+            </button>
+            <button className="btn btn-secondary" onClick={handleStop} disabled={status !== 'listening'}>
+              ⏹️ Stop
+            </button>
             {transcript && (
               <button className="btn btn-ghost" onClick={handleClear}>🗑️</button>
             )}
           </div>
 
-          {/* Main CTA — goes to review panel */}
           {transcript && status === 'idle' && (
             <button
               className="btn btn-autofill"
-              onClick={handlePipeline}
+              onClick={() => handlePipeline()}
               disabled={isProcessing}
             >
-              {isProcessing
-                ? `⏳ ${pipelineStep}`
-                : '📝 Extract & Review Mappings'}
+              {isProcessing ? `⏳ ${pipelineStep}` : '📝 Extract & Review Mappings'}
             </button>
           )}
 
-          {/* Tip */}
-          {!transcript && (
+          {/* Profile quick-fill suggestion */}
+          {profileCount > 0 && !transcript && (
+            <div className="profile-suggestion">
+              <div className="suggestion-text">
+                💾 You have {profileCount} saved profile fields
+              </div>
+              <button
+                className="btn-use-profile"
+                onClick={() => {
+                  setActiveTab('profile')
+                }}
+              >
+                View Profile →
+              </button>
+            </div>
+          )}
+
+          {!transcript && profileCount === 0 && (
             <div className="tip-box">
-              💡 Speak naturally — "My name is Somil Jain, email somil@gmail.com,
+              💡 Try: "My name is Somil Jain, email somil@gmail.com,
               phone 9876543210, income three lakh rupees"
             </div>
           )}
@@ -322,7 +379,20 @@ const Popup: React.FC = () => {
         />
       )}
 
-      <p className="popup-footer">Phase 7 — User Review Panel</p>
+      {/* ── Profile Tab ── */}
+      {activeTab === 'profile' && (
+        <ProfileTab
+          profile={profile}
+          isLoading={profileLoading}
+          isSaving={profileSaving}
+          onUpdate={updateField}
+          onDelete={deleteField}
+          onClearAll={clearAll}
+          onFillFromProfile={handleFillFromProfile}
+        />
+      )}
+
+      <p className="popup-footer">Phase 8 — Profile Memory</p>
     </div>
   )
 }

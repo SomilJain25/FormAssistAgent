@@ -14,7 +14,7 @@ export interface MappingResult {
   field_id: string
   field_label: string
   field_type: string
-  confidence: float
+  confidence: number
   matched: boolean
 }
 
@@ -23,6 +23,7 @@ export interface ExtractResponse {
   transcript: string
   entities: Entity[]
   entity_map: Record<string, string>
+  detected_language: string
   message: string
 }
 
@@ -34,11 +35,14 @@ export interface MapResponse {
   message: string
 }
 
-export async function extractEntities(text: string): Promise<ExtractResponse> {
+export async function extractEntities(
+  text: string,
+  language: string = 'auto',
+): Promise<ExtractResponse> {
   const res = await fetch(`${API_BASE}/extract`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, language: 'en' }),
+    body: JSON.stringify({ text, language }),
   })
   if (!res.ok) throw new Error(`Extract API error: ${res.status}`)
   return res.json()

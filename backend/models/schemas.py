@@ -5,7 +5,7 @@ from typing import Optional
 
 class ExtractRequest(BaseModel):
     text: str
-    language: Optional[str] = "en"
+    language: Optional[str] = "auto"   # "auto", "en", "hi"
 
 class ExtractedEntity(BaseModel):
     entity_type: str
@@ -19,12 +19,10 @@ class ExtractResponse(BaseModel):
     transcript: str
     entities: list[ExtractedEntity]
     entity_map: dict
+    detected_language: str = "en"      # ← new
     message: str = ""
 
-# ── New schemas for Phase 5 ───────────────────────────────────────────────────
-
 class FormField(BaseModel):
-    """Mirrors DetectedField from the Chrome extension."""
     fieldId: str
     label: str = ""
     placeholder: str = ""
@@ -35,7 +33,6 @@ class FormField(BaseModel):
     value: str = ""
 
 class MappingResult(BaseModel):
-    """One entity → one field mapping with confidence."""
     entity_type: str
     entity_value: str
     field_id: str
@@ -45,12 +42,10 @@ class MappingResult(BaseModel):
     matched: bool
 
 class MapRequest(BaseModel):
-    """What the extension sends to /map."""
     entities: list[ExtractedEntity]
     fields: list[FormField]
 
 class MapResponse(BaseModel):
-    """What /map returns."""
     success: bool
     mappings: list[MappingResult]
     matched_count: int

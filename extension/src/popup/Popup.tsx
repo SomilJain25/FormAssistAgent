@@ -100,9 +100,18 @@ const Popup: React.FC = () => {
     setIsExtracting(true)
     let extractedEntities: Entity[] = []
     try {
-      const res = await extractEntities(text)
+      // In handlePipeline, update the extract call:
+      const res = await extractEntities(
+        text,
+        language === 'hi-IN' ? 'hi' : 'en'
+      )
       extractedEntities = res.entities
       setEntities(extractedEntities)
+
+      // Show detected language
+      if (res.detected_language === 'hi') {
+        console.log('Hindi detected — using Hindi NLP pipeline')
+      }
     } catch {
       setError('Backend unreachable. Run: uvicorn main:app --reload --port 8000')
       setIsExtracting(false); setPipelineStep(''); return
@@ -351,6 +360,26 @@ const Popup: React.FC = () => {
             <div className="tip-box">
               💡 Try: "My name is Somil Jain, email somil@gmail.com,
               phone 9876543210, income three lakh rupees"
+            </div>
+          )}
+
+          {/* Hindi test helper */}
+          {language === 'hi-IN' && !transcript && (
+            <div className="hindi-helper">
+              <p className="hindi-helper-title">🇮🇳 Hindi examples:</p>
+              {[
+                'मेरा नाम सोमिल जैन है',
+                'मेरी वार्षिक आय तीन लाख रुपये है',
+                'मेरा फोन नंबर 9876543210 है',
+              ].map(example => (
+                <button
+                  key={example}
+                  className="hindi-example-btn"
+                  onClick={() => setTranscript(example)}
+                >
+                  {example}
+                </button>
+              ))}
             </div>
           )}
         </>

@@ -60,3 +60,41 @@ export async function mapEntitiesToFields(
   if (!res.ok) throw new Error(`Map API error: ${res.status}`)
   return res.json()
 }
+
+// Add to existing file
+
+export interface ValidationResult {
+  entity_type: string
+  is_valid: boolean
+  suggestion: string
+}
+
+export interface CompletionStats {
+  total_fields: number
+  filled_fields: number
+  percentage: number
+  status: 'complete' | 'mostly_complete' | 'partial' | 'minimal'
+}
+
+export interface AnalyzeResponse {
+  success: boolean
+  validations: ValidationResult[]
+  missing_fields: string[]
+  completion: CompletionStats
+  ambiguous_entities: string[]
+  message: string
+}
+
+export async function analyzeForm(
+  entities: Entity[],
+  fields: object[],
+  template: 'common' | 'scholarship' = 'common',
+): Promise<AnalyzeResponse> {
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entities, fields, template }),
+  })
+  if (!res.ok) throw new Error(`Analyze API error: ${res.status}`)
+  return res.json()
+}

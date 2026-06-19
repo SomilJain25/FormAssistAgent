@@ -5,11 +5,13 @@ import ProfileTab   from '../components/ProfileTab'
 import useFormScanner from '../hooks/useFormScanner'
 import useReview    from '../hooks/useReview'
 import useProfile   from '../hooks/useProfile'
-import { extractEntities, mapEntitiesToFields, Entity, MappingResult } from '../services/api'
+import IntelligencePanel from '../components/IntelligencePanel'
+import { extractEntities, mapEntitiesToFields, analyzeForm, Entity, MappingResult, AnalyzeResponse } from '../services/api'
+
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
 type Status  = 'idle' | 'listening' | 'error'
-type TabName = 'speech' | 'fields' | 'review' | 'profile'
+type TabName = 'speech' | 'fields' | 'review' | 'profile' | 'intelligence'
 
 const LANGUAGES = [
   { label: '🇮🇳 English (India)', value: 'en-IN' as SupportedLanguage },
@@ -28,6 +30,10 @@ const Popup: React.FC = () => {
   const [isExtracting, setIsExtracting] = useState(false)
   const [isMapping, setIsMapping]       = useState(false)
   const [pipelineStep, setPipelineStep] = useState('')
+  // Add new state
+  const [analysis, setAnalysis]         = useState<AnalyzeResponse | null>(null)
+  const [isAnalyzing, setIsAnalyzing]   = useState(false)
+  const [template, setTemplate]         = useState<'common' | 'scholarship'>('common')
 
   const { fields, isScanning, lastScanned, scanFields, clearFields } = useFormScanner()
 
@@ -157,6 +163,25 @@ const Popup: React.FC = () => {
     setIsMapping(false); setPipelineStep('')
 
     loadMappings(mappedResults)
+
+    // After loadMappings(mappedResults) and before setActiveTab, add:
+
+    setPipelineStep('Analyzing form...')
+    setIsAnalyzing(true)
+    try {
+      const analyzeResult = await analyzeForm(extractedEntities, currentFields, template)
+      setAnalysis(analyzeResult)
+    } catch {
+      // Analysis is non-critical, fail silently
+      setAnalysis(null)
+    } finally {
+      setIsAnalyzing(false)
+    }
+    setPipelineStep('')
+
+    loadMappings(mappedResults)
+    setActiveTab('review')
+
     setActiveTab('review')
   }
 
@@ -292,6 +317,18 @@ const Popup: React.FC = () => {
             </select>
           </div>
 
+          <div className="lang-row">
+            <label className="lang-label">Form type:</label>
+            <select
+              className="lang-select"
+              value={template}
+              onChange={e => setTemplate(e.target.value as 'common' | 'scholarship')}
+            >
+              <option value="common">General form</option>
+              <option value="scholarship">Scholarship/admission</option>
+            </select>
+          </div>
+
           <div className={`status-badge status-${status}`}>
             {status === 'listening' ? '🔴 Listening...'
               : status === 'error' ? '❌ Error' : '⚪ Ready'}
@@ -419,6 +456,21 @@ const Popup: React.FC = () => {
           onClearAll={clearAll}
           onFillFromProfile={handleFillFromProfile}
         />
+      )}
+
+      {/* ── intellegence Tab ── */}
+      <button
+        className={`tab-btn ${activeTab === 'intelligence' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('intelligence')}
+      >
+        🧠
+        {analysis && analysis.completion.percentage < 100 && (
+          <span className="tab-badge tab-badge-amber">!</span>
+        )}
+      </button>
+
+      {activeTab === 'intelligence' && (
+        <IntelligencePanel analysis={analysis} isAnalyzing={isAnalyzing} />
       )}
 
       <p className="popup-footer">Phase 8 — Profile Memory</p>

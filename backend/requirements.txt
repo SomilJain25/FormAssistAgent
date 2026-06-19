@@ -6,3 +6,7 @@ python-dotenv==1.0.1
 word2number==1.1
 rapidfuzz==3.9.3
 indic-transliteration==2.3.39
+easyocr==1.7.1
+pdf2image==1.17.0
+Pillow==10.3.0
+numpy==1.26.4

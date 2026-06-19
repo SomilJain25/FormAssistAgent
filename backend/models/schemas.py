@@ -51,3 +51,29 @@ class MapResponse(BaseModel):
     matched_count: int
     unmatched_count: int
     message: str = ""
+
+# Add these to schemas.py
+
+class ValidationResult(BaseModel):
+    entity_type: str
+    is_valid: bool
+    suggestion: str = ""
+
+class CompletionStats(BaseModel):
+    total_fields: int
+    filled_fields: int
+    percentage: int
+    status: str   # complete, mostly_complete, partial, minimal
+
+class AnalyzeRequest(BaseModel):
+    entities: list[ExtractedEntity]
+    fields: list[FormField]
+    template: Optional[str] = "common"   # "common" or "scholarship"
+
+class AnalyzeResponse(BaseModel):
+    success: bool
+    validations: list[ValidationResult]
+    missing_fields: list[str]
+    completion: CompletionStats
+    ambiguous_entities: list[str]   # entity types with confidence < 0.70
+    message: str = ""    

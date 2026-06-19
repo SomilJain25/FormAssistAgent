@@ -1057,3 +1057,143 @@ details[open] .manual-summary::before { content: '▼ '; }
 }
 
 .hindi-example-btn:hover { background: #fffde7; }
+
+/* ── Tab badge amber ── */
+.tab-badge-amber {
+  background: #f57f17;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  margin-left: 3px;
+}
+
+/* ── Intelligence panel ── */
+.intel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intel-loading, .intel-empty {
+  text-align: center;
+  padding: 20px;
+  color: #aaa;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Completion card */
+.completion-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #eee;
+}
+
+.completion-info { flex: 1; }
+
+.completion-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: #222;
+}
+
+.completion-detail {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* Section */
+.intel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.intel-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+/* Issue rows */
+.intel-issue-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 8px;
+}
+
+.intel-issue-icon { font-size: 16px; }
+
+.intel-issue-content { flex: 1; }
+
+.intel-issue-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.intel-issue-suggestion {
+  font-size: 11px;
+  color: #8d6e00;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* Ambiguous chips */
+.ambiguous-chips, .missing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ambiguous-chip {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #f57f17;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.missing-chip {
+  background: #f5f5f5;
+  border: 1px dashed #ccc;
+  color: #888;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.intel-hint {
+  font-size: 11px;
+  color: #aaa;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+/* All good */
+.intel-all-good {
+  text-align: center;
+  padding: 16px;
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: 8px;
+  color: #2e7d32;
+  font-size: 13px;
+  font-weight: 500;
+}

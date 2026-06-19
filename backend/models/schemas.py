@@ -77,3 +77,27 @@ class AnalyzeResponse(BaseModel):
     completion: CompletionStats
     ambiguous_entities: list[str]   # entity types with confidence < 0.70
     message: str = ""    
+
+# Add to schemas.py
+
+class OCRField(BaseModel):
+    index: int
+    fieldId: str
+    label: str
+    placeholder: str = ""
+    name: str = ""
+    id: str
+    type: str = "text"
+    tagName: str = "INPUT"
+    value: str = ""
+    confidence: float = 0.0
+    bbox: Optional[list] = None
+
+class OCRParseResponse(BaseModel):
+    success: bool
+    fields: list[OCRField]
+    raw_text: str
+    total_text_boxes: int
+    fields_detected: int
+    pages_processed: int = 1
+    message: str = ""    

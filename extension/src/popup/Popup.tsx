@@ -66,33 +66,64 @@ const Popup: React.FC = () => {
     return () => chrome.runtime.onMessage.removeListener(handler)
   }, [])
 
+
+  // Add near your other useEffects
+  useEffect(() => {
+    // Proactively wake/inject content script when popup opens
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0]
+      const tabId = tab?.id
+      const url = tab?.url || ''
+      if (!tabId || !(url.startsWith('http://') || url.startsWith('https://'))) return
+
+      chrome.tabs.sendMessage(tabId, { type: 'PING' }, (res) => {
+        if (chrome.runtime.lastError) {
+          chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['contentScript.js'],
+          })
+        }
+      })
+    })
+  }, [])
+  
   // ── Send to content script ────────────────────────────────────────────────
   const sendToPage = (type: string, extra = {}, callback?: (r: any) => void) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0]
       const tabId = tab?.id
       const url = tab?.url || ''
+
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         setError('Please open a real webpage first.')
         return
       }
-      const send = () => {
+
+      const trySend = (isRetry = false) => {
         chrome.tabs.sendMessage(tabId!, { type, ...extra }, (res) => {
           if (chrome.runtime.lastError) {
-            setError('Page connection lost. Refresh the page.')
+            if (!isRetry) {
+              // Content script likely not injected yet — inject and retry ONCE
+              chrome.scripting.executeScript(
+                { target: { tabId: tabId! }, files: ['contentScript.js'] },
+                () => {
+                  if (chrome.runtime.lastError) {
+                    setError('Could not connect to page. Please refresh and try again.')
+                    return
+                  }
+                  setTimeout(() => trySend(true), 250)
+                }
+              )
+            } else {
+              setError('Page connection lost. Please refresh the page and try again.')
+            }
             return
           }
           callback?.(res)
         })
       }
-      chrome.tabs.sendMessage(tabId!, { type: 'PING' }, () => {
-        if (chrome.runtime.lastError) {
-          chrome.scripting.executeScript(
-            { target: { tabId: tabId! }, files: ['contentScript.js'] },
-            () => setTimeout(send, 300)
-          )
-        } else { send() }
-      })
+
+      trySend()
     })
   }
 

@@ -1,4 +1,4 @@
-fastapi==0.111.0
+fastapi==0.109.2
 uvicorn==0.29.0
 spacy==3.7.4
 pydantic==2.7.1
@@ -6,10 +6,11 @@ python-dotenv==1.0.1
 word2number==1.1
 rapidfuzz==3.9.3
 indic-transliteration==2.3.39
+typer==0.9.4
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+alembic==1.13.1
 easyocr==1.7.1
 pdf2image==1.17.0
 Pillow==10.3.0
 numpy==1.26.4
-sqlalchemy==2.0.30
-psycopg2-binary==2.9.9
-alembic==1.13.1

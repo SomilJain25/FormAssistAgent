@@ -1197,3 +1197,107 @@ details[open] .manual-summary::before { content: '▼ '; }
   font-size: 13px;
   font-weight: 500;
 }
+/* ── OCR panel ── */
+.ocr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ocr-intro {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.ocr-upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  border: 2px dashed #ccc;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.ocr-upload-zone:hover {
+  border-color: #7b1fa2;
+  background: #faf5fb;
+}
+
+.ocr-upload-icon { font-size: 28px; }
+
+.ocr-upload-text {
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+}
+
+.ocr-processing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  font-size: 12px;
+  color: #888;
+  justify-content: center;
+}
+
+.ocr-preview-img {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  background: #fafafa;
+}
+
+.ocr-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.ocr-pages {
+  background: #e3f2fd;
+  color: #1565c0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.ocr-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ocr-field-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #faf5fb;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ocr-field-label {
+  flex: 1;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ocr-field-conf {
+  font-size: 11px;
+  color: #999;
+}

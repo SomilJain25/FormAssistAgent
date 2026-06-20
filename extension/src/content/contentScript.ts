@@ -343,10 +343,11 @@ function fillAllFields(instructions: FillInstruction[]): FillResult[] {
   return results
 }
 
-// ─── Speech Recognition (Phase 2) ────────────────────────────────────────────
+// ─── Speech Recognition (Phase 2, fixed) ─────────────────────────────────────
 
 let recognition: any = null
 let isListening = false
+let userRequestedStop = false
 
 const SpeechRecognition =
   (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -357,6 +358,8 @@ function startRecognition(lang: string) {
     return
   }
   if (isListening) return
+
+  userRequestedStop = false
 
   recognition = new SpeechRecognition()
   recognition.lang = lang
@@ -385,11 +388,22 @@ function startRecognition(lang: string) {
   }
 
   recognition.onerror = (event: any) => {
+    // Silent auto-recovery for false-alarm silence detection
+    if (event.error === 'no-speech' && !userRequestedStop) {
+      try {
+        recognition.stop()
+      } catch {}
+      return // onend will handle the restart
+    }
+
+    if (event.error === 'aborted') {
+      return // expected when we call stop() ourselves
+    }
+
     const msgs: Record<string, string> = {
-      'not-allowed':    'Microphone denied. Click 🔒 → allow microphone.',
-      'no-speech':      'No speech detected. Try again.',
-      'network':        'Network error.',
-      'audio-capture':  'No microphone found.',
+      'not-allowed':   'Microphone denied. Click 🔒 → allow microphone.',
+      'network':       'Network error. Check your connection.',
+      'audio-capture': 'No microphone found.',
     }
     chrome.runtime.sendMessage({
       type: 'SPEECH_ERROR',
@@ -399,24 +413,41 @@ function startRecognition(lang: string) {
   }
 
   recognition.onend = () => {
+    if (!userRequestedStop) {
+      // Auto-restart — Chrome ends sessions on silence even with continuous:true
+      try {
+        recognition.start()
+        return // stay in "listening" state from the popup's perspective
+      } catch {
+        isListening = false
+      }
+    }
     isListening = false
     chrome.runtime.sendMessage({ type: 'SPEECH_STOPPED' })
   }
 
-  try { recognition.start() }
-  catch {
+  try {
+    recognition.start()
+  } catch {
     chrome.runtime.sendMessage({ type: 'SPEECH_ERROR', error: 'Could not start mic.' })
   }
 }
 
 function stopRecognition() {
-  if (recognition && isListening) recognition.stop()
+  userRequestedStop = true
+  if (recognition && isListening) {
+    recognition.stop()
+  }
 }
 
 // ─── Message Listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
+    case 'PING':
+      sendResponse({ alive: true })
+      break
+
     case 'START_LISTENING':
       startRecognition(message.lang || 'en-IN')
       break
@@ -432,7 +463,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       break
 
     case 'FILL_FIELDS':
-      // message.instructions = FillInstruction[]
       const results = fillAllFields(message.instructions || [])
       sendResponse({ results })
       chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', results })

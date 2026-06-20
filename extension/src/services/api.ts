@@ -98,3 +98,42 @@ export async function analyzeForm(
   if (!res.ok) throw new Error(`Analyze API error: ${res.status}`)
   return res.json()
 }
+
+// Add to existing file
+
+export interface OCRField {
+  index: number
+  fieldId: string
+  label: string
+  placeholder: string
+  name: string
+  id: string
+  type: string
+  tagName: string
+  value: string
+  confidence: number
+  bbox?: number[][]
+}
+
+export interface OCRParseResponse {
+  success: boolean
+  fields: OCRField[]
+  raw_text: string
+  total_text_boxes: number
+  fields_detected: number
+  pages_processed: number
+  message: string
+}
+
+export async function parseOCRForm(file: File): Promise<OCRParseResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`${API_BASE}/ocr/parse`, {
+    method: 'POST',
+    body: formData,   // no Content-Type header — browser sets multipart boundary
+  })
+
+  if (!res.ok) throw new Error(`OCR API error: ${res.status}`)
+  return res.json()
+}

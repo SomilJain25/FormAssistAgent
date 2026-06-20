@@ -7,11 +7,12 @@ import useReview    from '../hooks/useReview'
 import useProfile   from '../hooks/useProfile'
 import IntelligencePanel from '../components/IntelligencePanel'
 import { extractEntities, mapEntitiesToFields, analyzeForm, Entity, MappingResult, AnalyzeResponse } from '../services/api'
-
+import OCRPanel from '../components/OCRPanel'
+import { OCRField } from '../services/api'
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
 type Status  = 'idle' | 'listening' | 'error'
-type TabName = 'speech' | 'fields' | 'review' | 'profile' | 'intelligence'
+type TabName = 'speech' | 'fields' | 'review' | 'profile' | 'intelligence' | 'ocr'
 
 const LANGUAGES = [
   { label: '🇮🇳 English (India)', value: 'en-IN' as SupportedLanguage },
@@ -34,7 +35,7 @@ const Popup: React.FC = () => {
   const [analysis, setAnalysis]         = useState<AnalyzeResponse | null>(null)
   const [isAnalyzing, setIsAnalyzing]   = useState(false)
   const [template, setTemplate]         = useState<'common' | 'scholarship'>('common')
-
+  const [ocrFields, setOcrFields]       = useState<OCRField[]>([])
   const { fields, isScanning, lastScanned, scanFields, clearFields } = useFormScanner()
 
   const {
@@ -130,8 +131,11 @@ const Popup: React.FC = () => {
     }
 
     // Scan fields if needed
+    // In handlePipeline, replace the field scanning section with:
+
     setPipelineStep('Scanning form fields...')
-    let currentFields = fields
+    let currentFields: any[] = fields.length ? fields : ocrFields
+
     if (!currentFields.length) {
       currentFields = await new Promise<any[]>(resolve => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -471,6 +475,17 @@ const Popup: React.FC = () => {
 
       {activeTab === 'intelligence' && (
         <IntelligencePanel analysis={analysis} isAnalyzing={isAnalyzing} />
+      )}
+
+      <button
+        className={`tab-btn ${activeTab === 'ocr' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('ocr')}
+      >
+        📄 {ocrFields.length > 0 && `(${ocrFields.length})`}
+      </button>
+
+      {activeTab === 'ocr' && (
+        <OCRPanel onFieldsExtracted={setOcrFields} />
       )}
 
       <p className="popup-footer">Phase 8 — Profile Memory</p>

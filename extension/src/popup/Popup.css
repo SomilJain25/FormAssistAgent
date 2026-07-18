@@ -10,7 +10,7 @@ body {
 }
 
 .popup-container {
-  width: 340px;
+  width: 360px;   /* was 340px */
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -207,31 +207,66 @@ body {
 }
 
 /* ── Tabs ── */
+/* ── Tabs ── */
 .tab-bar {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   background: #f0f0f0;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 3px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
+
+/* Hide scrollbar on tab bar */
+.tab-bar::-webkit-scrollbar { display: none; }
 
 .tab-btn {
   flex: 1;
-  padding: 7px;
+  min-width: 0;
+  padding: 6px 4px;
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 7px;
+  font-size: 10px;
   font-weight: 500;
   cursor: pointer;
   background: transparent;
-  color: #666;
+  color: #888;
   transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.tab-btn svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.tab-btn span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .tab-active {
   background: #fff;
-  color: #111;
+  color: #e53935;
   box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+.tab-active svg {
+  opacity: 1;
+  stroke: #e53935;
+}
+
+.tab-btn:not(.tab-active):hover {
+  background: rgba(255,255,255,0.6);
+  color: #555;
 }
 
 /* ── Field Panel ── */

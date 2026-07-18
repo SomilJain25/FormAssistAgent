@@ -12,8 +12,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=300 --retries 5 -r requirements.txt
 
-RUN python -m spacy download en_core_web_sm
-
+RUN pip install --no-cache-dir \
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 COPY . .
 
 RUN python -c "import easyocr; easyocr.Reader(['en', 'hi'], gpu=False)"

@@ -1,4 +1,11 @@
-const API_BASE = 'http://localhost:8000/api/v1'
+// api.ts
+
+// Switch between local dev and production automatically
+const isDev = false  // ← flip this to true for local testing
+
+const API_BASE = isDev
+  ? 'http://localhost:8000/api/v1'
+  : 'https://formassistagent.onrender.com'  // ← your real URL
 
 export interface Entity {
   entity_type: string

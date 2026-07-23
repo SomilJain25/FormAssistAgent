@@ -1,8 +1,5 @@
 # 🎙️ FormAssistAgent
 
-<p align="center">
-  <img src="images/banner.png" alt="FormAssistAgent Banner" width="900"/>
-</p>
 
 <p align="center">
 An AI-powered Chrome Extension that uses Speech Recognition, NLP, OCR and Intelligent Field Mapping to automatically fill online forms.

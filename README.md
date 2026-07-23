@@ -146,6 +146,12 @@ FormAssistAgent solves this problem by combining Speech Recognition, Natural Lan
 
 ---
 
+## 📜 License
+
+This project is licensed under the **MIT License**.
+
+See the [LICENSE](LICENSE) file for more details.
+
 ## 📬 Contact
 
 **Somil Jain**

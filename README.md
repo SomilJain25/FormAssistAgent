@@ -64,13 +64,29 @@ flowchart TD
 
 ## 📸 Screenshots
 
-| Popup | Review |
-|--------|--------|
-| ![](images/popup.png) | ![](images/review.png) |
+## 📸 Popup
 
-| OCR | Profile |
-|-----|---------|
-| ![](images/ocr.png) | ![](images/profile.png) |
+![](images/popup.png)
+
+---
+
+## 📸 Review Screen
+
+![](images/review.png)
+
+---
+
+## 📸 OCR
+
+![](images/ocr.png)
+
+---
+
+## 📸 Profile
+
+![](images/profile.png)
+
+
 
 ## 🛠️ Tech Stack
 | Layer      | Technology              |

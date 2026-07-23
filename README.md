@@ -31,6 +31,8 @@ Designed for:
 - University admissions
 - Any HTML-based web form
 
+## 🚀 workflow
+
 ```mermaid
 flowchart TD
     A[🎤 Voice Input]

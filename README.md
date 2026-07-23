@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-An AI-powered Chrome Extension that fills online forms using voice commands.
+An AI-powered Chrome Extension that uses Speech Recognition, NLP, OCR and Intelligent Field Mapping to automatically fill online forms.
 </p>
 
 <p align="center">
@@ -18,8 +18,6 @@ An AI-powered Chrome Extension that fills online forms using voice commands.
   <img src="https://img.shields.io/badge/License-MIT-green">
 </p>
 
-Voice Form Assistant
-images/banner.png
 
 ## 🚀 Overview
 
@@ -86,7 +84,7 @@ flowchart TD
 
 
 
-
+## 📂 Project Structure
 
 ```text
 📦 FormAssistAgent

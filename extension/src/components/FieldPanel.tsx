@@ -42,21 +42,21 @@ const FieldPanel: React.FC<FieldPanelProps> = ({
       {/* Panel header */}
       <div className="panel-header">
         <span className="panel-title">
-          🔍 Detected Fields
+          Detected Fields
           {fields.length > 0 && (
             <span className="field-count">{fields.length}</span>
           )}
         </span>
         <div className="panel-actions">
           {fields.length > 0 && (
-            <button className="btn-icon" onClick={onClear} title="Clear">✕</button>
+            <button className="btn-icon" onClick={onClear} title="Clear">Clear</button>
           )}
           <button
             className="btn-scan"
             onClick={onScan}
             disabled={isScanning}
           >
-            {isScanning ? '⏳ Scanning...' : '🔍 Scan Page'}
+            {isScanning ? 'Scanning...' : 'Scan Page'}
           </button>
         </div>
       </div>

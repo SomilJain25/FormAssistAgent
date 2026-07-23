@@ -453,13 +453,13 @@ const Popup: React.FC = () => {
 
           <div className="button-row">
             <button className="btn btn-primary" onClick={handleStart} disabled={status === 'listening'}>
-              🎙️ Start
+              Start
             </button>
             <button className="btn btn-secondary" onClick={handleStop} disabled={status !== 'listening'}>
-              ⏹️ Stop
+              Stop
             </button>
             {transcript && (
-              <button className="btn btn-ghost" onClick={handleClear}>🗑️</button>
+              <button className="btn btn-ghost" onClick={handleClear}>Clear</button>
             )}
           </div>
 
@@ -469,7 +469,7 @@ const Popup: React.FC = () => {
               onClick={() => handlePipeline()}
               disabled={isProcessing}
             >
-              {isProcessing ? `⏳ ${pipelineStep}` : '📝 Extract & Review Mappings'}
+              {isProcessing ? pipelineStep : 'Extract & Review Mappings'}
             </button>
           )}
 
@@ -477,7 +477,7 @@ const Popup: React.FC = () => {
           {profileCount > 0 && !transcript && (
             <div className="profile-suggestion">
               <div className="suggestion-text">
-                💾 You have {profileCount} saved profile fields
+                You have {profileCount} saved profile fields
               </div>
               <button
                 className="btn-use-profile"
@@ -492,7 +492,7 @@ const Popup: React.FC = () => {
 
           {!transcript && profileCount === 0 && (
             <div className="tip-box">
-              💡 Try: "My name is Somil Jain, email somil@gmail.com,
+              Try: "My name is Somil Jain, email somil@gmail.com,
               phone 9876543210, income three lakh rupees"
             </div>
           )}
@@ -560,7 +560,7 @@ const Popup: React.FC = () => {
         className={`tab-btn ${activeTab === 'intelligence' ? 'tab-active' : ''}`}
         onClick={() => setActiveTab('intelligence')}
       >
-        🧠
+        Intelligence
         {analysis && analysis.completion.percentage < 100 && (
           <span className="tab-badge tab-badge-amber">!</span>
         )}
@@ -574,14 +574,12 @@ const Popup: React.FC = () => {
         className={`tab-btn ${activeTab === 'ocr' ? 'tab-active' : ''}`}
         onClick={() => setActiveTab('ocr')}
       >
-        📄 {ocrFields.length > 0 && `(${ocrFields.length})`}
+        OCR {ocrFields.length > 0 && `(${ocrFields.length})`}
       </button>
 
       {activeTab === 'ocr' && (
         <OCRPanel onFieldsExtracted={setOcrFields} />
       )}
-
-      <p className="popup-footer">Phase 8 — Profile Memory</p>
     </div>
   )
 }

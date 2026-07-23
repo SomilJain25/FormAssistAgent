@@ -44,6 +44,7 @@ flowchart TD
 
     A --> B --> C --> D --> E --> F --> G --> H
 ```
+## ✨ Features
 
 | Feature | Description |
 |----------|-------------|

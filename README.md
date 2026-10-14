@@ -64,13 +64,13 @@ flowchart TD
 
 ## 📸 Popup
 
-![](images/popup.png)   ![](images/review.png)
+![](images/popup.png)
 
 ---
 
 ## 📸 Review Screen
 
-
+![](images/review.png)
 
 ---
 

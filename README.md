@@ -147,5 +147,4 @@ Email: <somiljaintkg1234@gmail.com>
 
 ⭐ If you found this project useful, consider giving it a star.
 
-Made with ❤️ by **Somil Jain**  
-1
+Made with ❤️ by **Somil Jain**

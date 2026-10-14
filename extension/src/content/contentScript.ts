@@ -2,7 +2,8 @@
 // Runs inside every web page. Responsibilities:
 //   1. Form scanning  — find fillable fields and describe them
 //   2. Autofill       — write values so React/Angular/Vue notice them
-//   3. Speech         — Web Speech API (runs here so the mic prompt belongs to the page)
+//   (Speech recognition runs in src/listen/listen.ts — an extension page — so the
+//    microphone permission belongs to the extension, not to each website.)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -308,120 +309,12 @@ function main() {
     })
   }
 
-  // ─── Speech recognition ─────────────────────────────────────────────────────
-
-  const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition
-
-  let recognition: any = null
-  let isListening = false
-  let userRequestedStop = false
-
-  const notify = (msg: object) => {
-    try {
-      chrome.runtime.sendMessage(msg, () => void chrome.runtime.lastError)
-    } catch {
-      /* extension was reloaded; this orphaned script is harmless */
-    }
-  }
-
-  function startRecognition(lang: string) {
-    if (!SpeechRecognitionCtor) {
-      notify({ type: 'SPEECH_ERROR', error: 'Speech recognition is not supported in this browser. Use Google Chrome.' })
-      return
-    }
-    if (!window.isSecureContext) {
-      notify({ type: 'SPEECH_ERROR', error: 'The microphone only works on https:// pages. Open the form over https.' })
-      return
-    }
-    if (isListening) return
-
-    userRequestedStop = false
-    recognition = new SpeechRecognitionCtor()
-    recognition.lang = lang
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.maxAlternatives = 1
-
-    recognition.onstart = () => {
-      isListening = true
-      notify({ type: 'SPEECH_STARTED' })
-    }
-
-    recognition.onresult = (event: any) => {
-      let finalText = ''
-      let interimText = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const r = event.results[i]
-        if (r.isFinal) finalText += r[0].transcript + ' '
-        else interimText += r[0].transcript
-      }
-      notify({ type: 'SPEECH_RESULT', finalText: finalText.trim(), interimText: interimText.trim() })
-    }
-
-    recognition.onerror = (event: any) => {
-      if (event.error === 'no-speech' || event.error === 'aborted') return // onend restarts/cleans up
-
-      // Fatal error → make sure onend does NOT auto-restart into an endless error loop
-      userRequestedStop = true
-      isListening = false
-      const msgs: Record<string, string> = {
-        'not-allowed': 'Microphone blocked. Click the 🔒 icon in the address bar → allow Microphone, then try again.',
-        'service-not-allowed': 'Speech service blocked by the browser or site policy.',
-        network: 'Speech service needs an internet connection.',
-        'audio-capture': 'No microphone found.',
-        'language-not-supported': 'This language is not supported for speech recognition.',
-      }
-      notify({ type: 'SPEECH_ERROR', error: msgs[event.error] || `Speech error: ${event.error}` })
-    }
-
-    recognition.onend = () => {
-      if (!userRequestedStop) {
-        // Chrome ends sessions after silence even with continuous = true → restart quietly
-        try {
-          recognition.start()
-          return
-        } catch {
-          /* fall through to stopped */
-        }
-      }
-      const wasError = userRequestedStop && !isListening
-      isListening = false
-      if (!wasError) notify({ type: 'SPEECH_STOPPED' })
-    }
-
-    try {
-      recognition.start()
-    } catch {
-      notify({ type: 'SPEECH_ERROR', error: 'Could not start the microphone.' })
-    }
-  }
-
-  function stopRecognition() {
-    userRequestedStop = true
-    if (recognition) {
-      try {
-        recognition.stop()
-      } catch {
-        /* ignore */
-      }
-    }
-    if (!isListening) notify({ type: 'SPEECH_STOPPED' })
-  }
-
   // ─── Message listener ───────────────────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     switch (message?.type) {
       case 'PING':
-        sendResponse({ alive: true, listening: isListening })
-        break
-      case 'START_LISTENING':
-        startRecognition(message.lang || 'en-IN')
-        sendResponse({ ok: true })
-        break
-      case 'STOP_LISTENING':
-        stopRecognition()
-        sendResponse({ ok: true })
+        sendResponse({ alive: true })
         break
       case 'SCAN_FIELDS':
         sendResponse({ fields: scanFormFields() })

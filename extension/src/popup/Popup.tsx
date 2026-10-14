@@ -63,13 +63,13 @@ const Popup: React.FC = () => {
     readSpeech().then(async (state) => {
       setSpeech(state)
       if (state.status !== 'listening') return
-      // Stored "listening" may be stale (browser restarted / tab navigated) → verify
-      try {
-        const res = await sendToActiveTab<{ listening?: boolean }>('PING')
-        if (!res?.listening) patchSpeech({ status: 'idle', interim: '' })
-      } catch {
-        patchSpeech({ status: 'idle', interim: '' })
-      }
+      // Stored "listening" may be stale (window closed / browser restarted) → verify
+      const alive = await new Promise<boolean>(resolve => {
+        chrome.runtime.sendMessage({ type: 'LISTEN_PING' }, (res) => {
+          resolve(!chrome.runtime.lastError && !!res?.listening)
+        })
+      })
+      if (!alive) patchSpeech({ status: 'idle', interim: '' })
     })
 
     const onChange = (changes: { [k: string]: chrome.storage.StorageChange }, area: string) => {
@@ -193,23 +193,26 @@ const Popup: React.FC = () => {
   }, [fillResult])
 
   // ── Speech handlers ───────────────────────────────────────────────────────
+  // Speech runs in a small extension window (permission is per-extension, works on any site)
   const handleStart = async () => {
     setError(null)
     await patchSpeech({ error: null })
-    try {
-      await sendToActiveTab('START_LISTENING', { lang: language })
-    } catch (e: any) {
-      setError(e?.message || 'Could not start listening.')
-    }
+    chrome.runtime.sendMessage({ type: 'LISTEN_PING' }, (res) => {
+      if (!chrome.runtime.lastError && res?.listening) return // already open
+      chrome.windows.create({
+        url: chrome.runtime.getURL(`listen.html?lang=${encodeURIComponent(language)}`),
+        type: 'popup', width: 400, height: 380, focused: true,
+      })
+    })
   }
 
   const handleStop = async () => {
-    try { await sendToActiveTab('STOP_LISTENING') } catch { /* ignore */ }
+    chrome.runtime.sendMessage({ type: 'STOP_LISTEN_WINDOW' }, () => void chrome.runtime.lastError)
     await patchSpeech({ status: 'idle', interim: '' })
   }
 
   const handleClear = async () => {
-    try { if (status === 'listening') await sendToActiveTab('STOP_LISTENING') } catch { /* ignore */ }
+    if (status === 'listening') chrome.runtime.sendMessage({ type: 'STOP_LISTEN_WINDOW' }, () => void chrome.runtime.lastError)
     await patchSpeech({ ...EMPTY_SPEECH })
     setEntities([]); clearReview()
     setError(null); setPipelineStep('')

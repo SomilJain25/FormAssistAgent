@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Voice Form Assistant",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Fill online forms using voice commands powered by NLP",
   "permissions": [
     "activeTab",

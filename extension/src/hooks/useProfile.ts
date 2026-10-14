@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { UserProfile } from '../services/profileStorage'
 import {
-  UserProfile,
-  ProfileField,
   getProfile,
   upsertProfileField,
   deleteProfileField,
   clearProfile,
   saveEntitiesToProfile,
 } from '../services/profileStorage'
-import { Entity } from '../services/api'
+import type { Entity } from '../services/api'
 
 interface ProfileState {
   profile: UserProfile | null

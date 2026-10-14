@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { MappingResult } from '../services/api'
+import type { MappingResult } from '../services/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

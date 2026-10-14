@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
-import { parseOCRForm, OCRField } from '../services/api'
+import { parseOCRForm } from '../services/api'
+import type { OCRField } from '../services/api'
 
 interface OCRPanelProps {
   onFieldsExtracted: (fields: OCRField[]) => void

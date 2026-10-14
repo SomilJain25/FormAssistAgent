@@ -26,11 +26,24 @@ PHONE_PATTERN = re.compile(
 
 PINCODE_PATTERN = re.compile(r'\b[1-9][0-9]{5}\b')
 
+_NUM_WORDS = (r'(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
+              r'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|'
+              r'forty|fifty|sixty|seventy|eighty|ninety|hundred|and|a|half)')
+_AMOUNT = (r'(?:\d[\d,]*(?:\.\d+)?|' + _NUM_WORDS + r'(?:[\s\-]+' + _NUM_WORDS + r')*)')
+_UNIT = r'(?:crores?|lakhs?|lacs?|thousand)'
+
 INCOME_PATTERN = re.compile(
-    r'([\w\s]+(?:lakh|crore|thousand|hundred|lakhs|crores)[\w\s]*rupees?|'
-    r'rs\.?\s*[\d,]+|'
-    r'rupees?\s*[\w\s]+)',
+    r'(' + _AMOUNT + r'\s*' + _UNIT + r'(?:\s+' + _AMOUNT + r'\s*' + _UNIT + r')*(?:\s+' + _AMOUNT + r')?(?:\s+rupees?|\s+rs\.?)?|'
+    r'(?:rs\.?|inr|₹|rupees?)\s*\d[\d,]*(?:\.\d+)?|'
+    r'\d[\d,]*(?:\.\d+)?\s*(?:rupees?|rs\.?))',
     re.IGNORECASE
+)
+
+# "I live in Indore", "from Bhopal", "city is Pune"
+CITY_PATTERN = re.compile(
+    r"\b(?i:i\s+live\s+in|living\s+in|i\s+am\s+from|i'm\s+from|i\s+stay\s+in|"
+    r"my\s+city\s+is|city\s+is|resident\s+of|belong\s+to|from)\s+"
+    r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)",
 )
 
 DOB_PATTERN = re.compile(
@@ -88,18 +101,29 @@ def make_entity(
         raw_text=raw_text,
     )
 
-def extract_by_intro(text: str, patterns: list[str]) -> str | None:
+_NOT_A_NAME = {'male','female','other','transgender','from','in','a','an','the','born',
+               'living','studying','student','years','year','at','of','here','calling','applying'}
+
+def extract_by_intro(text: str, patterns: list[str], skip_relatives: bool = False) -> str | None:
     """Extract a name that follows an intro phrase."""
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            if skip_relatives and re.search(
+                r"(father|mother|papa|mama|dad|mom|parent|guardian)'?s?\s*(full\s+)?$",
+                text[max(0, match.start() - 20):match.start()], re.IGNORECASE):
+                continue
+            if skip_relatives and re.search(r"(father|mother|papa|mama|dad|mom)", match.group(), re.IGNORECASE):
+                continue
+            rest0 = text[match.end():].split()
+            if rest0 and rest0[0].strip('.,!?').lower() in _NOT_A_NAME:
+                continue
             rest = text[match.end():].strip()
             # Take up to 4 words (names aren't longer)
             words = rest.split()
             name_words = []
             for w in words[:5]:
                 # Stop at sentence boundary or common stop words
-                if w.lower() in {'and','my','is','the','a','an','.'} or re.match(r'[.!?,]', w):
+                if w.lower() in {'and','my','is','the','a','an','.','from','in','at','born','male','female','living','i','email','phone','mobile','contact','income','father','mother'} or re.match(r'[.!?,]', w):
                     break
                 name_words.append(w.strip('.,!?'))
             if name_words:
@@ -130,13 +154,6 @@ def extract_entities(raw_text: str) -> list[ExtractedEntity]:
         entities.append(make_entity('phone', raw, normalized, 0.95, raw))
         found.add('phone')
 
-    # ── Pincode ────────────────────────────────────────────────────────────
-    pin_match = PINCODE_PATTERN.search(text)
-    if pin_match and 'pincode' not in found:
-        val = pin_match.group()
-        entities.append(make_entity('pincode', val, val, 0.90, val))
-        found.add('pincode')
-
     # ── Date of Birth ──────────────────────────────────────────────────────
     dob_match = DOB_PATTERN.search(text)
     if dob_match and 'dob' not in found:
@@ -152,6 +169,20 @@ def extract_entities(raw_text: str) -> list[ExtractedEntity]:
         normalized = normalize_income(raw)
         entities.append(make_entity('income', raw, normalized, 0.85, raw))
         found.add('income')
+
+    # ── Pincode (after income so "rs 250000" is not mistaken for a PIN) ─────
+    income_span = income_match.span() if income_match else (-1, -1)
+    for pin_match in PINCODE_PATTERN.finditer(text):
+        if income_span[0] <= pin_match.start() < income_span[1]:
+            continue
+        if re.search(r'(rs\.?|inr|₹|rupees?|income|salary)\s*$', text[:pin_match.start()], re.IGNORECASE):
+            continue
+        if phone_match and phone_match.start() <= pin_match.start() < phone_match.end():
+            continue
+        val = pin_match.group()
+        entities.append(make_entity('pincode', val, val, 0.90, val))
+        found.add('pincode')
+        break
 
     # ── Gender ─────────────────────────────────────────────────────────────
     gender_match = GENDER_PATTERN.search(text)
@@ -189,8 +220,18 @@ def extract_entities(raw_text: str) -> list[ExtractedEntity]:
             entities.append(make_entity('city', ent.text, ent.text, 0.80, ent.text))
             found.add('city')
 
+    # ── City via phrase pattern (spaCy small model often misses Indian cities) ──
+    if 'city' not in found:
+        city_match = CITY_PATTERN.search(text)
+        if city_match:
+            city = city_match.group(1).strip()
+            # don't mistake the state for the city
+            if city.lower() not in INDIAN_STATES:
+                entities.append(make_entity('city', city, city, 0.78, city))
+                found.add('city')
+
     # ── Intro-phrase name extraction (higher confidence than spaCy) ─────────
-    name_from_intro = extract_by_intro(text, NAME_INTRO_PATTERNS)
+    name_from_intro = extract_by_intro(text, NAME_INTRO_PATTERNS, skip_relatives=True)
     if name_from_intro and 'name' not in found:
         entities.append(make_entity('name', name_from_intro, name_from_intro, 0.93, name_from_intro))
         found.add('name')

@@ -3,6 +3,7 @@
 # Generates smart correction suggestions.
 
 import re
+import datetime
 
 # ── Validation rules per entity type ──────────────────────────────────────────
 
@@ -36,6 +37,8 @@ def validate_pincode(value: str) -> tuple[bool, str]:
 
 def validate_dob(value: str) -> tuple[bool, str]:
     # Expecting DD-MM-YYYY after normalization
+    from services.text_preprocessor import normalize_date
+    value = normalize_date(value)
     match = re.match(r'^(\d{2})-(\d{2})-(\d{4})$', value)
     if not match:
         return False, "Date format unclear. Expected DD-MM-YYYY."
@@ -46,7 +49,7 @@ def validate_dob(value: str) -> tuple[bool, str]:
         return False, f"Invalid month: {month}"
     if not (1 <= day <= 31):
         return False, f"Invalid day: {day}"
-    if not (1900 <= year <= 2026):
+    if not (1900 <= year <= datetime.date.today().year):
         return False, f"Year {year} seems incorrect."
 
     return True, ""
@@ -146,6 +149,36 @@ def detect_missing_fields(
         field for field in required
         if field not in detected_entity_types
     ]
+    return missing
+
+def detect_unfilled_form_fields(
+    detected_entity_types: list[str],
+    fields: list[dict],
+    template: str = "common",
+) -> list[str]:
+    """
+    Entity types that the form actually asks for (a field on the page matches
+    them) but that the user has not spoken yet.  Falls back to the template's
+    required list only when no form fields were supplied.
+    """
+    from services.mapping_service import match_field, ENTITY_SYNONYMS
+
+    if not fields:
+        return detect_missing_fields(detected_entity_types, ["x"] * 3, template)
+
+    missing = []
+    for entity_type in ENTITY_SYNONYMS:
+        if entity_type in detected_entity_types:
+            continue
+        for f in fields:
+            score = match_field(
+                entity_type,
+                f.get("label", ""), f.get("placeholder", ""),
+                f.get("name", ""), f.get("id", ""),
+            )
+            if score >= 0.9:   # exact/keyword matches only — fuzzy is too noisy here
+                missing.append(entity_type)
+                break
     return missing
 
 def calculate_completion(

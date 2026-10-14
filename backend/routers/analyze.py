@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from models.schemas import AnalyzeRequest, AnalyzeResponse, ValidationResult, CompletionStats
 from services.validation_service import (
     validate_entity,
-    detect_missing_fields,
+    detect_unfilled_form_fields,
     calculate_completion,
 )
 from services.mapping_service import map_entities_to_fields
@@ -30,9 +30,6 @@ async def analyze(request: AnalyzeRequest):
       "template": "scholarship"
     }
     """
-    if not request.entities:
-        raise HTTPException(status_code=400, detail="No entities provided.")
-
     try:
         entities = [e.model_dump() for e in request.entities]
         fields   = [f.model_dump() for f in request.fields]
@@ -49,9 +46,8 @@ async def analyze(request: AnalyzeRequest):
 
         # ── 2. Detect missing fields ──
         detected_types = [e['entity_type'] for e in entities]
-        form_field_types = [f.get('type', 'text') for f in fields]
-        missing_fields = detect_missing_fields(
-            detected_types, form_field_types, request.template or "common"
+        missing_fields = detect_unfilled_form_fields(
+            detected_types, fields, request.template or "common"
         )
 
         # ── 3. Calculate completion ──

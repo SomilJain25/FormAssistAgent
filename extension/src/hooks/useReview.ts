@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
-import { MappingResult } from '../services/api'
-import { ReviewItem, ReviewStatus } from '../components/ReviewPanel'
+import type { MappingResult } from '../services/api'
+import type { ReviewItem, ReviewStatus } from '../components/ReviewPanel'
+import { sendToActiveTab } from '../services/tabMessaging'
 
 interface ReviewState {
   items: ReviewItem[]
@@ -71,24 +72,16 @@ const useReview = (): ReviewState & ReviewControls => {
       value: i.editedValue,
     }))
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tabId = tabs[0]?.id
-      if (!tabId) { setIsFilling(false); return }
-
-      chrome.tabs.sendMessage(
-        tabId,
-        { type: 'FILL_FIELDS', instructions },
-        (res) => {
-          setIsFilling(false)
-          if (chrome.runtime.lastError || !res) return
-          const results = res.results || []
-          setFillResult({
-            success: results.filter((r: any) => r.success).length,
-            failed:  results.filter((r: any) => !r.success).length,
-          })
-        }
-      )
-    })
+    sendToActiveTab<{ results?: { success: boolean }[] }>('FILL_FIELDS', { instructions })
+      .then(res => {
+        const results = res?.results || []
+        setFillResult({
+          success: results.filter(r => r.success).length,
+          failed:  results.filter(r => !r.success).length,
+        })
+      })
+      .catch(() => setFillResult({ success: 0, failed: instructions.length }))
+      .finally(() => setIsFilling(false))
   }, [items])
 
   const clearReview = useCallback(() => {

@@ -2,7 +2,6 @@
 # OCR pipeline using EasyOCR to extract text + bounding boxes from
 # scanned form images or PDFs.
 
-import easyocr
 import numpy as np
 from PIL import Image
 import io
@@ -15,6 +14,7 @@ _reader = None
 def get_reader():
     global _reader
     if _reader is None:
+        import easyocr  # heavy import — only when OCR is actually used
         _reader = easyocr.Reader(['en', 'hi'], gpu=False)
     return _reader
 

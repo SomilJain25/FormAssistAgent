@@ -1,5 +1,5 @@
 import React from 'react'
-import { AnalyzeResponse } from '../services/api'
+import type { AnalyzeResponse } from '../services/api'
 import { ENTITY_LABELS, ENTITY_ICONS } from '../services/profileStorage'
 
 interface IntelligencePanelProps {

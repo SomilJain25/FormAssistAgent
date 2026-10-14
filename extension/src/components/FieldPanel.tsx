@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { DetectedField } from '../content/contentScript'
+import type { DetectedField } from '../content/contentScript'
 
 interface FieldPanelProps {
   fields: DetectedField[]

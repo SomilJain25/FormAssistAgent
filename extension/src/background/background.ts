@@ -1,21 +1,41 @@
-// background.ts - Chrome Extension Service Worker
-// This file runs in the background and handles messaging
-// between popup and content scripts.
+// background.ts — MV3 service worker.
+// Receives speech events from the content script and keeps them in
+// chrome.storage so the popup can be closed and re-opened without losing data.
+
+import { patchSpeech, readSpeech } from '../services/speechStore'
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Voice Form Assistant installed successfully.')
+  console.log('Voice Form Assistant installed.')
 })
 
-// Listen for messages from the popup
-chrome.runtime.onMessage.addListener(
-  (message, sender, sendResponse) => {
-    if (message.type === 'PING') {
-      sendResponse({
-        status: 'ok',
-        version: '1.0.0',
-      })
-    }
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  switch (message?.type) {
+    case 'PING':
+      sendResponse({ status: 'ok', version: chrome.runtime.getManifest().version })
+      return false
 
-    return true
+    case 'SPEECH_STARTED':
+      patchSpeech({ status: 'listening', error: null })
+      break
+
+    case 'SPEECH_RESULT':
+      readSpeech().then(state => {
+        const transcript = message.finalText
+          ? `${state.transcript} ${message.finalText}`.trim()
+          : state.transcript
+        return patchSpeech({ transcript, interim: message.interimText || '' })
+      })
+      break
+
+    case 'SPEECH_STOPPED':
+      patchSpeech({ status: 'idle', interim: '' })
+      break
+
+    case 'SPEECH_ERROR':
+      patchSpeech({ status: 'error', interim: '', error: message.error || 'Speech error' })
+      break
   }
-)
+  // No async response is ever sent → return false so Chrome doesn't warn
+  // "message port closed before a response was received".
+  return false
+})

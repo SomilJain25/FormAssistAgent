@@ -97,6 +97,15 @@ def normalize_label(label: str) -> str:
     label = re.sub(r'\s+', ' ', label)
     return label.strip()
 
+def _contains(haystack: str, needle: str) -> bool:
+    import re
+    if len(needle) < 3:
+        return False
+    return re.search(r'(?<![a-z0-9])' + re.escape(needle) + r'(?![a-z0-9])', haystack) is not None
+
+# Words that mean a field belongs to someone else (so "name" must not claim it)
+_OTHER_PERSON = ("father", "mother", "guardian", "spouse", "husband", "wife", "parent", "referee", "emergency")
+
 def match_field(
     entity_type: str,
     field_label: str,
@@ -122,6 +131,11 @@ def match_field(
     if not candidates:
         return 0.0
 
+    if entity_type in ("name", "phone", "email", "address") and any(
+        w in c for c in candidates for w in _OTHER_PERSON
+    ):
+        return 0.0
+
     best_score = 0.0
 
     for synonym in synonyms:
@@ -133,7 +147,9 @@ def match_field(
                 return EXACT_CONFIDENCE
 
             # Layer 2 — keyword containment
-            if syn_norm in candidate or candidate in syn_norm:
+            # Containment only counts when the contained part is a whole word
+            # sequence of reasonable length (avoids field id "d" matching "date of birth")
+            if _contains(candidate, syn_norm) or (len(candidate) >= 6 and _contains(syn_norm, candidate)):
                 best_score = max(best_score, KEYWORD_CONFIDENCE)
                 continue
 

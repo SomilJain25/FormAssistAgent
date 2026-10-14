@@ -1,11 +1,52 @@
-// api.ts
+// api.ts — client for the FormAssist backend (FastAPI on Render)
 
-// Switch between local dev and production automatically
-const isDev = false  // ← flip this to true for local testing
+// Override at build time:  VITE_API_BASE=http://localhost:8000/api/v1 npm run build
+const API_BASE: string =
+  (import.meta.env.VITE_API_BASE as string | undefined) ||
+  'https://formassistagent.onrender.com/api/v1'
 
-const API_BASE = isDev
-  ? 'http://localhost:8000/api/v1'
-  : 'https://formassistagent.onrender.com/api/v1'  // ← your real URL
+// Render's free tier sleeps after ~15 min idle; the first request can take
+// 30-60 s while the container boots, so use a generous timeout + one retry.
+const REQUEST_TIMEOUT_MS = 70_000
+
+async function request(path: string, init: RequestInit, retries = 1): Promise<Response> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      const res = await fetch(`${API_BASE}${path}`, { ...init, signal: controller.signal })
+      // 502/503/504 = Render still waking up → retry
+      if ([502, 503, 504].includes(res.status) && attempt < retries) {
+        await new Promise(r => setTimeout(r, 4000))
+        continue
+      }
+      return res
+    } catch (err) {
+      lastError = err
+      if (attempt < retries) await new Promise(r => setTimeout(r, 3000))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Network error')
+}
+
+async function postJson<T>(path: string, body: unknown, label: string): Promise<T> {
+  const res = await request(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${label} API error: ${res.status}`)
+  return res.json()
+}
+
+/** Fire-and-forget ping so a sleeping Render instance starts booting early. */
+export function wakeBackend(): void {
+  const root = API_BASE.replace(/\/api\/v1$/, '')
+  fetch(`${root}/health`).catch(() => {})
+}
 
 export interface Entity {
   entity_type: string
@@ -46,26 +87,14 @@ export async function extractEntities(
   text: string,
   language: string = 'auto',
 ): Promise<ExtractResponse> {
-  const res = await fetch(`${API_BASE}/extract`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, language }),
-  })
-  if (!res.ok) throw new Error(`Extract API error: ${res.status}`)
-  return res.json()
+  return postJson<ExtractResponse>('/extract', { text, language }, 'Extract')
 }
 
 export async function mapEntitiesToFields(
   entities: Entity[],
   fields: object[],
 ): Promise<MapResponse> {
-  const res = await fetch(`${API_BASE}/map`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entities, fields }),
-  })
-  if (!res.ok) throw new Error(`Map API error: ${res.status}`)
-  return res.json()
+  return postJson<MapResponse>('/map', { entities, fields }, 'Map')
 }
 
 // Add to existing file
@@ -97,13 +126,7 @@ export async function analyzeForm(
   fields: object[],
   template: 'common' | 'scholarship' = 'common',
 ): Promise<AnalyzeResponse> {
-  const res = await fetch(`${API_BASE}/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entities, fields, template }),
-  })
-  if (!res.ok) throw new Error(`Analyze API error: ${res.status}`)
-  return res.json()
+  return postJson<AnalyzeResponse>('/analyze', { entities, fields, template }, 'Analyze')
 }
 
 // Add to existing file
@@ -119,7 +142,7 @@ export interface OCRField {
   tagName: string
   value: string
   confidence: number
-  bbox?: number[][]
+  bbox?: number[][] | null
 }
 
 export interface OCRParseResponse {
@@ -136,7 +159,7 @@ export async function parseOCRForm(file: File): Promise<OCRParseResponse> {
   const formData = new FormData()
   formData.append('file', file)
 
-  const res = await fetch(`${API_BASE}/ocr/parse`, {
+  const res = await request('/ocr/parse', {
     method: 'POST',
     body: formData,   // no Content-Type header — browser sets multipart boundary
   })

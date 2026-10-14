@@ -5,14 +5,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from database import engine, Base
 from routers.extract import router as extract_router
 from routers.map import router as map_router
 from routers.analyze import router as analyze_router
 from routers.ocr import router as ocr_router
 from routers.profile import router as profile_router
-
-load_dotenv()
 
 # Create DB tables on startup (use Alembic migrations for real production)
 Base.metadata.create_all(bind=engine)
@@ -24,12 +24,13 @@ app = FastAPI(
 )
 
 # ── CORS — restrict to known origins in production ──
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+_allow_all = "*" in ALLOWED_ORIGINS or not ALLOWED_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"] if _allow_all else ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

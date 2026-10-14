@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { UserProfile, ProfileField, ENTITY_LABELS, ENTITY_ICONS } from '../services/profileStorage'
+import type { UserProfile, ProfileField } from '../services/profileStorage'
+import { ENTITY_LABELS, ENTITY_ICONS } from '../services/profileStorage'
 
 interface ProfileTabProps {
   profile: UserProfile | null

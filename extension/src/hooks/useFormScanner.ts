@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
-import { DetectedField } from '../content/contentScript'
+import type { DetectedField } from '../content/contentScript'
+import { sendToActiveTab } from '../services/tabMessaging'
 
 interface FormScannerState {
   fields: DetectedField[]
@@ -22,50 +23,15 @@ const useFormScanner = (): FormScannerState & FormScannerControls => {
   const scanFields = useCallback(() => {
     setIsScanning(true)
     setError(null)
-
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tab = tabs[0]
-      const tabId = tab?.id
-      const url = tab?.url || ''
-
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        setError('Open a real webpage (http/https) to scan for form fields.')
-        setIsScanning(false)
-        return
-      }
-
-      // Send SCAN_FIELDS and get response directly
-      chrome.tabs.sendMessage(tabId!, { type: 'SCAN_FIELDS' }, (response) => {
-        setIsScanning(false)
-
-        if (chrome.runtime.lastError) {
-          // Content script not injected yet — inject first then retry
-          chrome.scripting.executeScript(
-            { target: { tabId: tabId! }, files: ['contentScript.js'] },
-            () => {
-              setTimeout(() => {
-                chrome.tabs.sendMessage(tabId!, { type: 'SCAN_FIELDS' }, (res) => {
-                  if (chrome.runtime.lastError || !res) {
-                    setError('Could not scan page. Please refresh and try again.')
-                    return
-                  }
-                  setFields(res.fields || [])
-                  setLastScanned(new Date())
-                })
-              }, 300)
-            }
-          )
-          return
-        }
-
-        if (response?.fields) {
-          setFields(response.fields)
-          setLastScanned(new Date())
-        } else {
-          setError('No form fields found on this page.')
-        }
+    sendToActiveTab<{ fields?: DetectedField[] }>('SCAN_FIELDS')
+      .then(res => {
+        const found = res?.fields || []
+        setFields(found)
+        setLastScanned(new Date())
+        if (!found.length) setError('No form fields found on this page.')
       })
-    })
+      .catch(e => setError(e?.message || 'Could not scan page.'))
+      .finally(() => setIsScanning(false))
   }, [])
 
   const clearFields = useCallback(() => {

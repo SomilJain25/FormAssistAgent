@@ -2,16 +2,22 @@ import React, { useState, useEffect } from 'react'
 import FieldPanel   from '../components/FieldPanel'
 import ReviewPanel  from '../components/ReviewPanel'
 import ProfileTab   from '../components/ProfileTab'
+import IntelligencePanel from '../components/IntelligencePanel'
+import OCRPanel from '../components/OCRPanel'
 import useFormScanner from '../hooks/useFormScanner'
 import useReview    from '../hooks/useReview'
 import useProfile   from '../hooks/useProfile'
-import IntelligencePanel from '../components/IntelligencePanel'
-import { extractEntities, mapEntitiesToFields, analyzeForm, Entity, MappingResult, AnalyzeResponse } from '../services/api'
-import OCRPanel from '../components/OCRPanel'
-import { OCRField } from '../services/api'
+import {
+  extractEntities, mapEntitiesToFields, analyzeForm, wakeBackend,
+} from '../services/api'
+import type { Entity, MappingResult, AnalyzeResponse, OCRField } from '../services/api'
+import { sendToActiveTab } from '../services/tabMessaging'
+import {
+  EMPTY_SPEECH, SPEECH_KEY, readSpeech, patchSpeech,
+} from '../services/speechStore'
+import type { SpeechState } from '../services/speechStore'
 
 type SupportedLanguage = 'en-IN' | 'hi-IN' | 'en-US'
-type Status  = 'idle' | 'listening' | 'error'
 type TabName = 'speech' | 'fields' | 'review' | 'profile' | 'intelligence' | 'ocr'
 
 const LANGUAGES = [
@@ -20,18 +26,18 @@ const LANGUAGES = [
   { label: '🌐 English (US)',      value: 'en-US' as SupportedLanguage },
 ]
 
+const BACKEND_HELP =
+  'Could not reach the server. It may be waking up (free hosting sleeps when idle) — wait ~30 seconds and try again.'
+
 const Popup: React.FC = () => {
   const [activeTab, setActiveTab]       = useState<TabName>('speech')
-  const [status, setStatus]             = useState<Status>('idle')
   const [language, setLanguage]         = useState<SupportedLanguage>('en-IN')
-  const [transcript, setTranscript]     = useState('')
-  const [interimText, setInterimText]   = useState('')
+  const [speech, setSpeech]             = useState<SpeechState>(EMPTY_SPEECH)
   const [error, setError]               = useState<string | null>(null)
   const [entities, setEntities]         = useState<Entity[]>([])
   const [isExtracting, setIsExtracting] = useState(false)
   const [isMapping, setIsMapping]       = useState(false)
   const [pipelineStep, setPipelineStep] = useState('')
-  // Add new state
   const [analysis, setAnalysis]         = useState<AnalyzeResponse | null>(null)
   const [isAnalyzing, setIsAnalyzing]   = useState(false)
   const [template, setTemplate]         = useState<'common' | 'scholarship'>('common')
@@ -45,146 +51,82 @@ const Popup: React.FC = () => {
 
   const {
     profile, isLoading: profileLoading, isSaving: profileSaving,
-    updateField, deleteField, clearAll, saveEntities, getFieldValue,
+    updateField, deleteField, clearAll, saveEntities,
   } = useProfile()
 
-  // ── Message listener ──────────────────────────────────────────────────────
+  const status     = speech.status
+  const transcript = speech.transcript
+  const interimText = speech.interim
+
+  // ── Speech state lives in chrome.storage (survives the popup closing) ─────
   useEffect(() => {
-    const handler = (message: any) => {
-      switch (message.type) {
-        case 'SPEECH_STARTED': setStatus('listening'); setError(null); break
-        case 'SPEECH_RESULT':
-          if (message.finalText)
-            setTranscript(prev => (prev + ' ' + message.finalText).trim())
-          setInterimText(message.interimText || '')
-          break
-        case 'SPEECH_STOPPED': setStatus('idle'); setInterimText(''); break
-        case 'SPEECH_ERROR':   setStatus('error'); setError(message.error); break
+    readSpeech().then(async (state) => {
+      setSpeech(state)
+      if (state.status !== 'listening') return
+      // Stored "listening" may be stale (browser restarted / tab navigated) → verify
+      try {
+        const res = await sendToActiveTab<{ listening?: boolean }>('PING')
+        if (!res?.listening) patchSpeech({ status: 'idle', interim: '' })
+      } catch {
+        patchSpeech({ status: 'idle', interim: '' })
+      }
+    })
+
+    const onChange = (changes: { [k: string]: chrome.storage.StorageChange }, area: string) => {
+      if (area === 'local' && changes[SPEECH_KEY]) {
+        setSpeech({ ...EMPTY_SPEECH, ...(changes[SPEECH_KEY].newValue || {}) })
       }
     }
-    chrome.runtime.onMessage.addListener(handler)
-    return () => chrome.runtime.onMessage.removeListener(handler)
+    chrome.storage.onChanged.addListener(onChange)
+    wakeBackend() // start booting the (possibly sleeping) server right away
+    return () => chrome.storage.onChanged.removeListener(onChange)
   }, [])
 
+  useEffect(() => { if (speech.error) setError(speech.error) }, [speech.error])
 
-  // Add near your other useEffects
-  useEffect(() => {
-    // Proactively wake/inject content script when popup opens
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tab = tabs[0]
-      const tabId = tab?.id
-      const url = tab?.url || ''
-      if (!tabId || !(url.startsWith('http://') || url.startsWith('https://'))) return
-
-      chrome.tabs.sendMessage(tabId, { type: 'PING' }, (res) => {
-        if (chrome.runtime.lastError) {
-          chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['contentScript.js'],
-          })
-        }
-      })
-    })
-  }, [])
-  
-  // ── Send to content script ────────────────────────────────────────────────
-  const sendToPage = (type: string, extra = {}, callback?: (r: any) => void) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tab = tabs[0]
-      const tabId = tab?.id
-      const url = tab?.url || ''
-
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        setError('Please open a real webpage first.')
-        return
-      }
-
-      const trySend = (isRetry = false) => {
-        chrome.tabs.sendMessage(tabId!, { type, ...extra }, (res) => {
-          if (chrome.runtime.lastError) {
-            if (!isRetry) {
-              // Content script likely not injected yet — inject and retry ONCE
-              chrome.scripting.executeScript(
-                { target: { tabId: tabId! }, files: ['contentScript.js'] },
-                () => {
-                  if (chrome.runtime.lastError) {
-                    setError('Could not connect to page. Please refresh and try again.')
-                    return
-                  }
-                  setTimeout(() => trySend(true), 250)
-                }
-              )
-            } else {
-              setError('Page connection lost. Please refresh the page and try again.')
-            }
-            return
-          }
-          callback?.(res)
-        })
-      }
-
-      trySend()
-    })
+  // Fresh scan of the live page (field list may have changed since the last scan)
+  const scanLivePage = async (): Promise<any[]> => {
+    try {
+      const res = await sendToActiveTab<{ fields: any[] }>('SCAN_FIELDS')
+      return res?.fields || []
+    } catch (e: any) {
+      setError(e?.message || 'Could not scan the page.')
+      return []
+    }
   }
 
-  // ── Full pipeline ─────────────────────────────────────────────────────────
+  // ── Full pipeline: extract → scan → map → analyse ─────────────────────────
   const handlePipeline = async (sourceText?: string) => {
-    const text = sourceText || transcript
+    const text = (sourceText || transcript).trim()
     if (!text) return
     setError(null); clearReview()
 
-    // Extract
     setPipelineStep('Extracting entities...')
     setIsExtracting(true)
     let extractedEntities: Entity[] = []
     try {
-      // In handlePipeline, update the extract call:
-      const res = await extractEntities(
-        text,
-        language === 'hi-IN' ? 'hi' : 'en'
-      )
+      const res = await extractEntities(text, language === 'hi-IN' ? 'hi' : 'auto')
       extractedEntities = res.entities
       setEntities(extractedEntities)
-
-      // Show detected language
-      if (res.detected_language === 'hi') {
-        console.log('Hindi detected — using Hindi NLP pipeline')
-      }
     } catch {
-      setError('Backend unreachable. Run: uvicorn main:app --reload --port 8000')
+      setError(BACKEND_HELP)
       setIsExtracting(false); setPipelineStep(''); return
     }
     setIsExtracting(false)
 
     if (!extractedEntities.length) {
-      setError('No entities found in transcript.')
+      setError('No details found in what you said. Try e.g. "My name is ..., email ..., phone ...".')
       setPipelineStep(''); return
     }
-
-    // Scan fields if needed
-    // In handlePipeline, replace the field scanning section with:
 
     setPipelineStep('Scanning form fields...')
-    let currentFields: any[] = fields.length ? fields : ocrFields
-
+    let currentFields: any[] = await scanLivePage()
+    if (!currentFields.length && ocrFields.length) currentFields = ocrFields
     if (!currentFields.length) {
-      currentFields = await new Promise<any[]>(resolve => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const tabId = tabs[0]?.id
-          if (!tabId) { resolve([]); return }
-          chrome.tabs.sendMessage(tabId, { type: 'SCAN_FIELDS' }, (res) => {
-            resolve(res?.fields || [])
-          })
-        })
-      })
-    }
-
-    if (!currentFields.length) {
-      setError('No form fields found on this page.')
+      setError(prev => prev || 'No form fields found on this page.')
       setPipelineStep(''); return
     }
 
-    // Map
     setPipelineStep('Mapping to fields...')
     setIsMapping(true)
     let mappedResults: MappingResult[] = []
@@ -192,107 +134,85 @@ const Popup: React.FC = () => {
       const res = await mapEntitiesToFields(extractedEntities, currentFields)
       mappedResults = res.mappings
     } catch {
-      setError('Mapping failed. Check backend.')
+      setError(BACKEND_HELP)
       setIsMapping(false); setPipelineStep(''); return
     }
-    setIsMapping(false); setPipelineStep('')
-
+    setIsMapping(false)
     loadMappings(mappedResults)
-
-    // After loadMappings(mappedResults) and before setActiveTab, add:
 
     setPipelineStep('Analyzing form...')
     setIsAnalyzing(true)
     try {
-      const analyzeResult = await analyzeForm(extractedEntities, currentFields, template)
-      setAnalysis(analyzeResult)
+      setAnalysis(await analyzeForm(extractedEntities, currentFields, template))
     } catch {
-      // Analysis is non-critical, fail silently
-      setAnalysis(null)
+      setAnalysis(null) // non-critical
     } finally {
       setIsAnalyzing(false)
     }
     setPipelineStep('')
-
-    loadMappings(mappedResults)
-    setActiveTab('review')
-
     setActiveTab('review')
   }
 
-  // ── Fill from profile ─────────────────────────────────────────────────────
-  // Build a fake transcript from saved profile data, run through pipeline
+  // ── Fill from saved profile ───────────────────────────────────────────────
   const handleFillFromProfile = async () => {
     const profileFields = profile?.fields
     if (!profileFields || Object.keys(profileFields).length === 0) return
 
     setError(null); clearReview()
-
-    // Scan fields first
     setPipelineStep('Scanning form fields...')
-    let currentFields = fields
+    const currentFields = await scanLivePage()
     if (!currentFields.length) {
-      currentFields = await new Promise<any[]>(resolve => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          const tabId = tabs[0]?.id
-          if (!tabId) { resolve([]); return }
-          chrome.tabs.sendMessage(tabId, { type: 'SCAN_FIELDS' }, (res) => {
-            resolve(res?.fields || [])
-          })
-        })
-      })
-    }
-
-    if (!currentFields.length) {
-      setError('No form fields found on this page.')
+      setError(prev => prev || 'No form fields found on this page.')
       setPipelineStep(''); return
     }
 
-    // Build entity list directly from profile
     const profileEntities: Entity[] = Object.values(profileFields).map(f => ({
-      entity_type: f.key,
-      value:       f.value,
-      normalized:  f.value,
-      confidence:  1.0,
-      raw_text:    f.value,
+      entity_type: f.key, value: f.value, normalized: f.value, confidence: 1.0, raw_text: f.value,
     }))
 
-    // Map directly
     setPipelineStep('Mapping profile to fields...')
     setIsMapping(true)
-    let mappedResults: MappingResult[] = []
     try {
       const res = await mapEntitiesToFields(profileEntities, currentFields)
-      mappedResults = res.mappings
+      loadMappings(res.mappings)
+      setEntities(profileEntities)
+      setActiveTab('review')
     } catch {
-      setError('Mapping failed. Check backend.')
-      setIsMapping(false); setPipelineStep(''); return
+      setError(BACKEND_HELP)
+    } finally {
+      setIsMapping(false); setPipelineStep('')
     }
-    setIsMapping(false); setPipelineStep('')
-
-    loadMappings(mappedResults)
-    setActiveTab('review')
   }
 
-  // ── Auto-save to profile after fill ──────────────────────────────────────
+  // ── Auto-save to profile after a successful fill ──────────────────────────
   useEffect(() => {
     if (fillResult && fillResult.success > 0 && entities.length > 0) {
       saveEntities(entities)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fillResult])
 
   // ── Speech handlers ───────────────────────────────────────────────────────
-  const handleStart = () => {
+  const handleStart = async () => {
     setError(null)
-    sendToPage('START_LISTENING', { lang: language })
+    await patchSpeech({ error: null })
+    try {
+      await sendToActiveTab('START_LISTENING', { lang: language })
+    } catch (e: any) {
+      setError(e?.message || 'Could not start listening.')
+    }
   }
 
-  const handleStop = () => sendToPage('STOP_LISTENING')
+  const handleStop = async () => {
+    try { await sendToActiveTab('STOP_LISTENING') } catch { /* ignore */ }
+    await patchSpeech({ status: 'idle', interim: '' })
+  }
 
-  const handleClear = () => {
-    setTranscript(''); setInterimText('')
+  const handleClear = async () => {
+    try { if (status === 'listening') await sendToActiveTab('STOP_LISTENING') } catch { /* ignore */ }
+    await patchSpeech({ ...EMPTY_SPEECH })
     setEntities([]); clearReview()
-    setError(null); setStatus('idle'); setPipelineStep('')
+    setError(null); setPipelineStep('')
   }
 
   const displayText = transcript + (interimText ? ' ' + interimText : '')
@@ -331,7 +251,7 @@ const Popup: React.FC = () => {
           onClick={() => setActiveTab('fields')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>`
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
             <path d="M3 9h18"/>
             <path d="M9 21V9"/>
           </svg>
@@ -463,7 +383,7 @@ const Popup: React.FC = () => {
             )}
           </div>
 
-          {transcript && status === 'idle' && (
+          {transcript && status !== 'listening' && (
             <button
               className="btn btn-autofill"
               onClick={() => handlePipeline()}
@@ -509,7 +429,7 @@ const Popup: React.FC = () => {
                 <button
                   key={example}
                   className="hindi-example-btn"
-                  onClick={() => setTranscript(example)}
+                  onClick={() => patchSpeech({ transcript: example })}
                 >
                   {example}
                 </button>
@@ -555,28 +475,12 @@ const Popup: React.FC = () => {
         />
       )}
 
-      {/* ── intellegence Tab ── */}
-      <button
-        className={`tab-btn ${activeTab === 'intelligence' ? 'tab-active' : ''}`}
-        onClick={() => setActiveTab('intelligence')}
-      >
-        Intelligence
-        {analysis && analysis.completion.percentage < 100 && (
-          <span className="tab-badge tab-badge-amber">!</span>
-        )}
-      </button>
-
+      {/* ── Insights Tab ── */}
       {activeTab === 'intelligence' && (
         <IntelligencePanel analysis={analysis} isAnalyzing={isAnalyzing} />
       )}
 
-      <button
-        className={`tab-btn ${activeTab === 'ocr' ? 'tab-active' : ''}`}
-        onClick={() => setActiveTab('ocr')}
-      >
-        OCR {ocrFields.length > 0 && `(${ocrFields.length})`}
-      </button>
-
+      {/* ── OCR Tab ── */}
       {activeTab === 'ocr' && (
         <OCRPanel onFieldsExtracted={setOcrFields} />
       )}

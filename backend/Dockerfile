@@ -14,7 +14,7 @@ COPY requirements.txt .
 # CPU-only torch first (the default wheel pulls ~2GB of CUDA libs, too big for Render)
 RUN pip install --no-cache-dir \
     --default-timeout=300 --retries 5 \
-    torch torchvision --index-url https://download.pytorch.org/whl/cpu
+    torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir \
     --default-timeout=300 \

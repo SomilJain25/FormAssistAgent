@@ -35,14 +35,7 @@ Designed for:
 
 ```mermaid
 flowchart TD
-    A[🎤 Voice Input]
-    B[Speech Recognition]
-    C[FastAPI Backend]
-    D[spaCy NLP]
-    E[Entity Extraction]
-    F[Fuzzy Mapping]
-    G[Review Screen]
-    H[Auto Fill Form]
+    A[🎤 Voice Input] B[Speech Recognition] C[FastAPI Backend] D[spaCy NLP] E[Entity Extraction] F[Fuzzy Mapping] G[Review Screen] H[Auto Fill Form]
 
     A --> B --> C --> D --> E --> F --> G --> H
 ```
@@ -58,8 +51,6 @@ flowchart TD
 | 📄 OCR Support | Extract labels from scanned forms |
 | 👤 Profile Storage | Save frequently used information |
 | 🔒 Secure | No field is filled without user approval |
-
-
 
 
 ## 📸 Screenshots
@@ -97,21 +88,6 @@ flowchart TD
 | OCR        | EasyOCR                 |
 | Database   | PostgreSQL / SQLite     |
 | Deployment | Docker                  |
-
-
-
-## 📂 Project Structure
-
-```text
-📦 FormAssistAgent
-├── 📂 backend
-├── 📂 extension
-├── 📂 docs
-├── 📂 images
-├── 📜 docker-compose.yml
-├── 📜 requirements.txt
-└── 📜 README.md
-```
 
 
 ## 🚀 Future Improvements

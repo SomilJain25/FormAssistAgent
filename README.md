@@ -35,7 +35,14 @@ Designed for:
 
 ```mermaid
 flowchart TD
-    A[🎤 Voice Input] B[Speech Recognition] C[FastAPI Backend] D[spaCy NLP] E[Entity Extraction] F[Fuzzy Mapping] G[Review Screen] H[Auto Fill Form]
+    A[🎤 Voice Input] 
+    B[Speech Recognition] 
+    C[FastAPI Backend] 
+    D[spaCy NLP] 
+    E[Entity Extraction] 
+    F[Fuzzy Mapping] 
+    G[Review Screen] 
+    H[Auto Fill Form]
 
     A --> B --> C --> D --> E --> F --> G --> H
 ```
